@@ -651,7 +651,7 @@ mod tests {
             let again = docx::open(&bytes).unwrap_or_else(|e| panic!("{}: {e}", t.id));
             let blocks = again.payload["doc"]["content"].as_array().unwrap();
             assert!(!blocks.is_empty(), "{}", t.id);
-            let text = docx::text::to_plain_text(&again.payload["doc"]);
+            let text = docx::text::to_plain_text(&again.payload["doc"], &again.payload["styles"], &again.payload["numbering"]);
             assert!(!text.trim().is_empty() || t.id == "single-spaced", "{}", t.id);
             if t.id == "report" || t.id == "toc-tutorial" {
                 assert!(again.payload["footers"]["default"].is_object(), "{} footer", t.id);

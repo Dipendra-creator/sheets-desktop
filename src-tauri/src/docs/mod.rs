@@ -201,7 +201,7 @@ impl DocSession {
             DocFormat::Docx => self.docx_bytes(author),
             DocFormat::Txt => {
                 let mut out = if bom { vec![0xEF, 0xBB, 0xBF] } else { vec![] };
-                out.extend_from_slice(docx::text::to_plain_text(&p["doc"]).as_bytes());
+                out.extend_from_slice(docx::text::to_plain_text(&p["doc"], &p["styles"], &p["numbering"]).as_bytes());
                 Ok(out)
             }
             DocFormat::Md => Ok(docx::text::to_markdown(&p["doc"], &p["styles"], &p["numbering"]).into_bytes()),

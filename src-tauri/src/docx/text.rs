@@ -270,11 +270,97 @@ fn inline_text(nodes: &[Value], out: &mut String) {
     }
 }
 
-fn blocks_text(blocks: &[Value], out: &mut Vec<String>) {
+/// List labels as Word writes them in plain text ("1.", "a)", "•").
+struct Labels<'a> {
+    cx: MdContext<'a>,
+    counters: std::collections::HashMap<i64, [i64; 9]>,
+}
+
+impl Labels<'_> {
+    /// Moves the list counters on to a paragraph: (level, bullet, the
+    /// counters at it, the level definitions) when it is in a list.
+    fn next(&mut self, attrs: &Value) -> Option<(usize, bool, [i64; 9], Vec<Value>)> {
+        let (num_id, level, bullet) = self.cx.list(attrs)?;
+        let defs: Vec<Value> = (0..9).map(|l| self.cx.level(num_id, l).unwrap_or(Value::Null)).collect();
+        let start = |l: usize| defs[l]["start"].as_i64().or_else(|| defs[l]["start"].as_str().and_then(|s| s.parse().ok())).unwrap_or(1);
+        let c = self.counters.entry(num_id).or_insert([0; 9]);
+        // A level starts again below a higher one
+        for (l, v) in c.iter_mut().enumerate() {
+            if l > level {
+                *v = 0;
+            }
+        }
+        c[level] = if c[level] == 0 { start(level) } else { c[level] + 1 };
+        for (l, v) in c.iter_mut().enumerate().take(level) {
+            if *v == 0 {
+                *v = start(l);
+            }
+        }
+        Some((level, bullet, *c, defs))
+    }
+
+    fn label(&mut self, attrs: &Value) -> Option<String> {
+        let (level, bullet, counters, defs) = self.next(attrs)?;
+        if bullet {
+            return Some("\u{2022}".into());
+        }
+        let mut out = defs[level]["lvlText"].as_str().map(String::from).unwrap_or_else(|| format!("%{}.", level + 1));
+        for (l, n) in counters.iter().enumerate() {
+            let key = format!("%{}", l + 1);
+            if out.contains(&key) {
+                out = out.replace(&key, &format_number((*n).max(1), defs[l]["numFmt"].as_str().unwrap_or("decimal")));
+            }
+        }
+        Some(out)
+    }
+}
+
+/// A list number in a Word number format.
+fn format_number(n: i64, fmt: &str) -> String {
+    let letters = |n: i64, upper: bool| {
+        let n = n.max(1) - 1;
+        let c = (b'a' + (n % 26) as u8) as char;
+        let s = c.to_string().repeat((n / 26 + 1) as usize);
+        if upper {
+            s.to_uppercase()
+        } else {
+            s
+        }
+    };
+    let roman = |mut n: i64, upper: bool| {
+        let table = [(1000, "m"), (900, "cm"), (500, "d"), (400, "cd"), (100, "c"), (90, "xc"), (50, "l"), (40, "xl"), (10, "x"), (9, "ix"), (5, "v"), (4, "iv"), (1, "i")];
+        let mut s = String::new();
+        for (v, r) in table {
+            while n >= v {
+                s.push_str(r);
+                n -= v;
+            }
+        }
+        if upper {
+            s.to_uppercase()
+        } else {
+            s
+        }
+    };
+    match fmt {
+        "lowerLetter" => letters(n, false),
+        "upperLetter" => letters(n, true),
+        "lowerRoman" => roman(n, false),
+        "upperRoman" => roman(n, true),
+        "decimalZero" if n < 10 => format!("0{n}"),
+        _ => n.to_string(),
+    }
+}
+
+fn blocks_text(blocks: &[Value], labels: &mut Labels, out: &mut Vec<String>) {
     for b in blocks {
         match b["type"].as_str().unwrap_or("") {
             "paragraph" => {
                 let mut line = String::new();
+                if let Some(label) = labels.label(b.get("attrs").unwrap_or(&Value::Null)) {
+                    line.push_str(&label);
+                    line.push('\t');
+                }
                 inline_text(b.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), &mut line);
                 out.push(line);
             }
@@ -283,7 +369,7 @@ fn blocks_text(blocks: &[Value], out: &mut Vec<String>) {
                     let mut cells = Vec::new();
                     for cell in row.get("content").and_then(|c| c.as_array()).into_iter().flatten() {
                         let mut lines = Vec::new();
-                        blocks_text(cell.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), &mut lines);
+                        blocks_text(cell.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), labels, &mut lines);
                         cells.push(lines.join(" "));
                     }
                     out.push(cells.join("\t"));
@@ -295,10 +381,12 @@ fn blocks_text(blocks: &[Value], out: &mut Vec<String>) {
     }
 }
 
-/// The document as plain text (Windows line ends).
-pub fn to_plain_text(doc: &Value) -> String {
+/// The document as plain text (Windows line ends), with list numbers and bullets.
+pub fn to_plain_text(doc: &Value, styles: &Value, numbering: &Value) -> String {
+    let list = styles["styles"].as_array().map(|v| v.as_slice()).unwrap_or(&[]);
+    let mut labels = Labels { cx: MdContext { styles: list, numbering }, counters: Default::default() };
     let mut lines = Vec::new();
-    blocks_text(doc.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), &mut lines);
+    blocks_text(doc.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), &mut labels, &mut lines);
     let mut s = lines.join("\r\n");
     s.push_str("\r\n");
     s
@@ -336,6 +424,14 @@ impl MdContext<'_> {
         None
     }
 
+    /// A list level's definition (lvlText, numFmt, start).
+    fn level(&self, num_id: i64, level: usize) -> Option<Value> {
+        let n = &self.numbering["nums"][num_id.to_string()];
+        let abs = n["abstract"].as_str().map(String::from).or_else(|| n["abstract"].as_i64().map(|v| v.to_string()))?;
+        let int = |v: &Value| v.as_i64().or_else(|| v.as_str().and_then(|s| s.parse().ok()));
+        self.numbering["abstracts"][abs.as_str()]["levels"].as_array()?.iter().find(|l| int(&l["ilvl"]) == Some(level as i64)).cloned()
+    }
+
     /// The paragraph's list: (list id, level, bullet?) when it is numbered.
     fn list(&self, attrs: &Value) -> Option<(i64, usize, bool)> {
         let mut num = attrs.get("numPr").cloned().filter(|n| n.is_object());
@@ -352,18 +448,20 @@ impl MdContext<'_> {
             }
         }
         let num = num?;
-        let num_id = num.get("numId").and_then(|v| v.as_i64())?;
+        // Ids and levels come as numbers or as strings
+        let int = |v: Option<&Value>| v.and_then(|v| v.as_i64().or_else(|| v.as_str().and_then(|s| s.trim().parse().ok())));
+        let num_id = int(num.get("numId"))?;
         if num_id == 0 {
             return None;
         }
-        let level = num.get("ilvl").and_then(|v| v.as_i64()).unwrap_or(0).clamp(0, 8) as usize;
+        let level = int(num.get("ilvl")).unwrap_or(0).clamp(0, 8) as usize;
         let n = &self.numbering["nums"][num_id.to_string()];
         let abs = n["abstract"].as_str().map(String::from).or_else(|| n["abstract"].as_i64().map(|v| v.to_string()));
         let fmt = abs
             .and_then(|a| {
                 self.numbering["abstracts"][a.as_str()]["levels"]
                     .as_array()
-                    .and_then(|ls| ls.iter().find(|l| l["ilvl"].as_i64() == Some(level as i64)).cloned())
+                    .and_then(|ls| ls.iter().find(|l| l["ilvl"].as_i64().or_else(|| l["ilvl"].as_str().and_then(|s| s.parse().ok())) == Some(level as i64)).cloned())
             })
             .and_then(|l| l["numFmt"].as_str().map(String::from))
             .unwrap_or_else(|| "bullet".into());
@@ -437,9 +535,7 @@ fn md_inline(nodes: &[Value]) -> String {
     out
 }
 
-fn md_blocks(cx: &MdContext, blocks: &[Value], out: &mut Vec<String>) {
-    let mut counters = [0usize; 9];
-    let mut list_id = 0i64;
+fn md_blocks(labels: &mut Labels, blocks: &[Value], out: &mut Vec<String>) {
     for b in blocks {
         let content = b.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]);
         match b["type"].as_str().unwrap_or("") {
@@ -447,29 +543,19 @@ fn md_blocks(cx: &MdContext, blocks: &[Value], out: &mut Vec<String>) {
                 let attrs = b.get("attrs").cloned().unwrap_or(Value::Null);
                 let text = md_inline(content);
                 let style = attrs.get("style").and_then(|s| s.as_str()).unwrap_or("Normal");
-                if let Some(level) = cx.heading_level(style) {
-                    counters = [0; 9];
+                if let Some(level) = labels.cx.heading_level(style) {
                     if !text.trim().is_empty() {
                         out.push(format!("{} {}", "#".repeat(level), text.trim()));
                         out.push(String::new());
                     }
                     continue;
                 }
-                if let Some((id, level, bullet)) = cx.list(&attrs) {
-                    if id != list_id {
-                        counters = [0; 9];
-                        list_id = id;
-                    }
-                    for c in counters.iter_mut().skip(level + 1) {
-                        *c = 0;
-                    }
-                    counters[level] += 1;
+                // List items keep Word's numbers (Markdown starts a list at its first number)
+                if let Some((level, bullet, counters, _)) = labels.next(&attrs) {
                     let marker = if bullet { "-".to_string() } else { format!("{}.", counters[level]) };
                     out.push(format!("{}{} {}", "   ".repeat(level), marker, text.trim()));
                     continue;
                 }
-                counters = [0; 9];
-                list_id = 0;
                 if out.last().map(|l| l.starts_with('-') || l.starts_with(' ') || l.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)).unwrap_or(false) {
                     out.push(String::new());
                 }
@@ -481,7 +567,6 @@ fn md_blocks(cx: &MdContext, blocks: &[Value], out: &mut Vec<String>) {
                 out.push(String::new());
             }
             "table" => {
-                counters = [0; 9];
                 let mut rows: Vec<Vec<String>> = Vec::new();
                 for row in content {
                     let mut cells = Vec::new();
@@ -526,9 +611,9 @@ fn md_blocks(cx: &MdContext, blocks: &[Value], out: &mut Vec<String>) {
 /// The document as Markdown (headings, lists, emphasis, links, tables).
 pub fn to_markdown(doc: &Value, styles: &Value, numbering: &Value) -> String {
     let list = styles["styles"].as_array().map(|v| v.as_slice()).unwrap_or(&[]);
-    let cx = MdContext { styles: list, numbering };
+    let mut labels = Labels { cx: MdContext { styles: list, numbering }, counters: Default::default() };
     let mut lines = Vec::new();
-    md_blocks(&cx, doc.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), &mut lines);
+    md_blocks(&mut labels, doc.get("content").and_then(|c| c.as_array()).map(|v| v.as_slice()).unwrap_or(&[]), &mut lines);
     while lines.last().map(|l| l.is_empty()).unwrap_or(false) {
         lines.pop();
     }
@@ -542,11 +627,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plain_text_lists() {
+        let doc = json!({ "type": "doc", "content": [
+            { "type": "paragraph", "attrs": { "numPr": { "numId": "7", "ilvl": "0" } }, "content": [{ "type": "text", "text": "One" }] },
+            { "type": "paragraph", "attrs": { "numPr": { "numId": "7", "ilvl": "1" } }, "content": [{ "type": "text", "text": "Sub" }] },
+            { "type": "paragraph", "attrs": { "numPr": { "numId": "7", "ilvl": "0" } }, "content": [{ "type": "text", "text": "Two" }] },
+            { "type": "paragraph", "attrs": { "numPr": { "numId": "8", "ilvl": "0" } }, "content": [{ "type": "text", "text": "Dot" }] }
+        ] });
+        let numbering = json!({
+            "abstracts": {
+                "1": { "levels": [
+                    { "ilvl": 0, "start": 1, "numFmt": "decimal", "lvlText": "%1." },
+                    { "ilvl": 1, "start": 1, "numFmt": "lowerLetter", "lvlText": "%1.%2)" }
+                ] },
+                "2": { "levels": [{ "ilvl": 0, "start": 1, "numFmt": "bullet", "lvlText": "\u{2022}" }] }
+            },
+            "nums": { "7": { "abstract": "1" }, "8": { "abstract": "2" } }
+        });
+        let text = to_plain_text(&doc, &json!({ "styles": [] }), &numbering);
+        assert_eq!(text, "1.\tOne\r\n1.a)\tSub\r\n2.\tTwo\r\n\u{2022}\tDot\r\n");
+    }
+
+    #[test]
     fn text_round_trip() {
         let d = from_plain_text("Hello\tworld\r\n\r\nSecond line\n");
         assert_eq!(d["content"].as_array().unwrap().len(), 3);
         assert_eq!(d["content"][0]["content"][1]["type"], "tab");
-        assert_eq!(to_plain_text(&d), "Hello\tworld\r\n\r\nSecond line\r\n");
+        assert_eq!(to_plain_text(&d, &json!({}), &json!({})), "Hello\tworld\r\n\r\nSecond line\r\n");
     }
 
     #[test]
