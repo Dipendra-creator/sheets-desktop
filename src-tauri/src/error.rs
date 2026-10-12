@@ -8,6 +8,8 @@ pub enum AppError {
     Engine(String),
     #[error("The workbook is no longer open.")]
     WorkbookNotFound,
+    #[error("The document is no longer open.")]
+    DocumentNotFound,
     #[error("{0}")]
     Io(String),
     #[error("{0}")]

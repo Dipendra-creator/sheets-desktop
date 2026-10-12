@@ -32,6 +32,10 @@ csv = "1"
 encoding_rs = "0.8"
 iana-time-zone = "0.1"
 semver = "1"
+# Word documents: the same zip and XML crates IronCalc already uses
+zip = "0.6"
+roxmltree = "0.19"
+base64 = "0.22"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]

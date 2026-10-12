@@ -1,10 +1,12 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the start window and every workbook window",
+  "description": "Capability for the start windows and every workbook and document window",
   "windows": [
     "main",
-    "book-*"
+    "book-*",
+    "doc-*",
+    "start-*"
   ],
   "permissions": [
     "core:default",
