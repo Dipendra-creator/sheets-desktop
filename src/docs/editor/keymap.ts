@@ -275,6 +275,7 @@ export function wordKeymap(ctl: DocController): Record<string, Command> {
     "Mod-Shift-e": cmd(() => ctl.setTracking(!ctl.trackChanges)),
     "Ctrl-Alt-f": cmd(() => ctl.insertNote("footnote")),
     "Ctrl-Alt-d": cmd(() => ctl.insertNote("endnote")),
+    "Mod-Alt-m": cmd(() => ctl.newComment()),
     "Alt-Shift-d": cmd(() => ctl.insertDate({ month: "numeric", day: "numeric", year: "numeric" }, true)),
     "Alt-Shift-t": cmd(() => ctl.insertField('TIME \\@ "h:mm am/pm"', new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }))),
     "Alt-Shift-p": cmd(() => ctl.insertField("PAGE", String(ctl.currentPage + 1))),

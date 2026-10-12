@@ -1492,6 +1492,8 @@ const SHORTCUTS: [string, string][] = [
   ["Ctrl+Shift+8", "Show/hide formatting marks"],
   ["Shift+F3", "Change case"],
   ["Ctrl+Shift+E", "Track changes"],
+  ["Ctrl+Alt+M", "New comment"],
+  ["Ctrl+Alt+F / D", "Insert footnote / endnote"],
   ["Alt+Shift+D / T", "Insert date / time"],
   ["F9", "Update fields"],
   ["Alt+Shift+↑ / ↓", "Move paragraph up / down"],

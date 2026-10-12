@@ -1,6 +1,7 @@
 // A Docs window showing a document: title bar, ribbon, ruler, the pages,
 // navigation and comments panes, status bar, dialogs and backstage.
 
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { CellSelection } from "prosemirror-tables";
@@ -24,6 +25,9 @@ import { clipboardAction, openSearch } from "./ribbon/HomeTab";
 import { Ruler } from "./Ruler";
 import { DocStatusBar } from "./StatusBar";
 import "./icons";
+
+/** Pictures Docs can insert (the window opens other dropped files). */
+export const PICTURE_FILE = /\.(png|jpe?g|gif|bmp)$/i;
 
 function QuickAccess({ ctl }: { ctl: DocController }) {
   useDoc(ctl, (c) => c.state);
@@ -273,6 +277,27 @@ export function DocView({ info, payload }: { info: DocInfo; payload: DocPayload 
       .then((u) => (unlisten = u))
       .catch(() => {});
     return () => unlisten?.();
+  }, [ctl]);
+
+  // Picture files dropped on the window. The app's file-drop handler takes
+  // dropped files before the editor sees them, so they come in this way.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    getCurrentWebview()
+      .onDragDropEvent((event) => {
+        if (event.payload.type !== "drop") return;
+        const pictures = event.payload.paths.filter((p) => PICTURE_FILE.test(p));
+        if (!pictures.length) return;
+        const scale = window.devicePixelRatio || 1;
+        void ctl.dropPictures(pictures, event.payload.position.x / scale, event.payload.position.y / scale);
+      })
+      .then((u) => (disposed ? u() : (unlisten = u)))
+      .catch(() => {});
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [ctl]);
 
   // Alt alone or F10: KeyTips; app-wide shortcuts

@@ -1418,6 +1418,14 @@ export class DocController {
     }
   }
 
+  /** Picture files dropped on the window: inserted where they were dropped. */
+  async dropPictures(paths: string[], left: number, top: number) {
+    const view = this.view;
+    const at = view?.posAtCoords({ left, top });
+    if (view && at) view.dispatch(view.state.tr.setSelection(TextSelection.near(view.state.doc.resolve(at.pos))));
+    for (const p of paths) await this.insertPictureFile(p);
+  }
+
   insertImage(added: { target: string; cx: number; cy: number; name: string }) {
     // Pictures wider than the text column are scaled down to fit
     const maxEmu = (this.textWidthTw() / 15) * EMU_PER_PX;

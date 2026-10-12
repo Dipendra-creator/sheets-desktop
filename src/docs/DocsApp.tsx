@@ -15,7 +15,7 @@ import { initLocale } from "../lib/formats";
 import { docsApi, isDocPath, type DocInfo, type DocPayload } from "./api";
 import { DocsBackstage } from "./backstage/DocsBackstage";
 import { DocsContext, type DocsAppApi } from "./context";
-import { DocView } from "./view/DocView";
+import { DocView, PICTURE_FILE } from "./view/DocView";
 import "./view/icons";
 
 interface Ask {
@@ -210,8 +210,8 @@ export default function DocsApp() {
     getCurrentWebview()
       .onDragDropEvent((event) => {
         if (event.payload.type !== "drop") return;
-        // Pictures dropped on a document are inserted by the editor
-        const files = event.payload.paths.filter((p) => !/\.(png|jpe?g|gif|bmp)$/i.test(p));
+        // Pictures dropped on a document are inserted into it (DocView)
+        const files = event.payload.paths.filter((p) => !PICTURE_FILE.test(p));
         files.forEach((p) => openPathRef.current(p));
       })
       .then((u) => (unlisten = u))
