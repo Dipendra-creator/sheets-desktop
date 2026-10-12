@@ -553,6 +553,8 @@ const opaque_inline: NodeSpec = {
   toDOM(node) {
     const a = node.attrs;
     if (a.hidden) return ["span", { class: `opq opq-hidden opq-${a.kind}`, "data-label": String(a.label ?? "") }];
+    // Watermarks are drawn on the page, behind the text
+    if (/PowerPlusWaterMarkObject/.test(String(a.xml ?? ""))) return ["span", { class: "opq opq-hidden opq-watermark", "data-label": "Watermark" }];
     const kind = a.kind as string;
     if (kind === "sym") {
       return ["span", { class: "opq opq-sym", style: `font-family:${fontStack(String(a.label || "Symbol"))}` }, String(a.text || "?")];
@@ -786,7 +788,7 @@ export function cssToHex(v: string): string | null {
 
 export const schema = new Schema({
   nodes: {
-    doc: { content: "block+", attrs: attrsOf(["page", "titlePg", "evenOdd", "numAdded"]) },
+    doc: { content: "block+", attrs: attrsOf(["page", "titlePg", "evenOdd", "numAdded", "background"]) },
     paragraph,
     table,
     table_row,

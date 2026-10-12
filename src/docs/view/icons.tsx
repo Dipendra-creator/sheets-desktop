@@ -219,6 +219,13 @@ registerIcons({
         <path d="M2 11.5h12M2 14h8" {...s} />
       </>
     ),
+    coverPage: () => (
+      <>
+        <path d="M3.5 1.5h9v13h-9z" {...s} />
+        <path d="M3.5 4.5h9v3h-9z" fill={B} stroke="none" />
+        <path d="M5.5 10h5M5.5 12h3" stroke="currentColor" />
+      </>
+    ),
     endnote: () => (
       <>
         <path d="M3.5 1.5h9v13h-9z" {...s} />
@@ -412,6 +419,25 @@ registerIcons({
         <rect x="5.5" y="2.5" width="21" height="27" fill={W} stroke="#8c8c8c" />
         <path d="M9 8h10M9 13h10M12 18h7M12 23h7" stroke="currentColor" />
         <path d="M20 8h3M20 13h3M20 18h3M20 23h3" stroke={B} strokeDasharray="1 1" />
+      </>
+    ),
+    watermark: () => (
+      <>
+        <rect x="5.5" y="2.5" width="21" height="27" fill={W} stroke="#8c8c8c" />
+        <text x="16" y="19" fontSize="9" fontWeight="700" fill="#b8b8b8" textAnchor="middle" transform="rotate(-40 16 16)">DRAFT</text>
+      </>
+    ),
+    pageColorBig: () => (
+      <>
+        <rect x="5.5" y="2.5" width="21" height="27" fill="#dce9f8" stroke="#8c8c8c" />
+        <path d="M11 22l6-8 4 4-6 8z" fill={W} stroke="currentColor" />
+        <path d="M22 18c1.5 2 1.5 3.5 0 4" stroke={B} fill="none" />
+      </>
+    ),
+    pageBorders: () => (
+      <>
+        <rect x="5.5" y="2.5" width="21" height="27" fill={W} stroke="#8c8c8c" />
+        <rect x="8.5" y="5.5" width="15" height="21" fill="none" stroke={B} strokeWidth="1.5" />
       </>
     ),
     footnote: () => (

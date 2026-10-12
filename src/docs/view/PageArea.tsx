@@ -15,6 +15,8 @@ import { ImageView } from "../editor/imageview";
 import { noteLabel, noteNumberPlugin, renderNote, type NoteKind } from "../editor/notes";
 import { geometryOf, hfTypeFor, paginators, type PageGeometry } from "../editor/pagination";
 import { resolveStory } from "../editor/sections";
+import { storyWatermark, type Watermark } from "../editor/watermark";
+import { borderCss, fontStack } from "../model/render";
 import { clipboardSerializer } from "../editor/serializer";
 import { layoutTabs, TabView, tabsPlugin } from "../editor/tabs";
 import { schema } from "../model/schema";
@@ -110,8 +112,10 @@ function StoryEditor({ ctl, edit }: { ctl: DocController; edit: HeaderFooterEdit
             return true;
           },
           Escape: () => {
+            // Back to the text, like Word's Close Header and Footer
             ctl.headerEdit = null;
             ctl.emit();
+            requestAnimationFrame(() => ctl.view?.focus());
             return true;
           },
         }),
@@ -145,6 +149,53 @@ function StoryEditor({ ctl, edit }: { ctl: DocController; edit: HeaderFooterEdit
     };
   }, [ctl, edit]);
   return <div ref={ref} className="hf-edit-host" />;
+}
+
+/** A watermark centred on the page, behind the text (like Word's WordArt shape). */
+function PageWatermark({ w, geo, z }: { w: Watermark; geo: PageGeometry; z: number }) {
+  const W = (w.width * 4) / 3;
+  const H = (w.height * 4) / 3;
+  const cx = geo.left + (geo.pageW - geo.left - geo.right) / 2;
+  const cy = geo.top + (geo.pageH - geo.top - geo.bottom) / 2;
+  return (
+    <svg
+      className="page-watermark"
+      aria-hidden
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      style={{ left: (cx - W / 2) * z, top: (cy - H / 2) * z, width: W * z, height: H * z, transform: `rotate(${w.rotation}deg)`, opacity: w.opacity }}
+    >
+      <text x={W / 2} y={H * 0.82} textAnchor="middle" textLength={W * 0.98} lengthAdjust="spacingAndGlyphs" fontSize={H * 1.05} fontFamily={fontStack(w.font) ?? undefined} fill={w.color}>
+        {w.text}
+      </text>
+    </svg>
+  );
+}
+
+/** Design > Page Borders: a box around the page or the text. */
+function PageBorders({ b, geo, z }: { b: Record<string, unknown>; geo: PageGeometry; z: number }) {
+  const side = (k: string) => (b[k] && typeof b[k] === "object" ? (b[k] as Record<string, unknown>) : null);
+  const fromText = b.offsetFrom !== "page";
+  const space = (k: string) => ((Number(side(k)?.space ?? (fromText ? 4 : 24)) || 0) * 4) / 3;
+  const at = fromText
+    ? { top: geo.top - space("top"), left: geo.left - space("left"), right: geo.right - space("right"), bottom: geo.bottom - space("bottom") }
+    : { top: space("top"), left: space("left"), right: space("right"), bottom: space("bottom") };
+  return (
+    <div
+      className="page-borders"
+      aria-hidden
+      style={{
+        top: at.top * z,
+        left: at.left * z,
+        right: at.right * z,
+        bottom: at.bottom * z,
+        borderTop: borderCss(side("top")) ?? "none",
+        borderLeft: borderCss(side("left")) ?? "none",
+        borderBottom: borderCss(side("bottom")) ?? "none",
+        borderRight: borderCss(side("right")) ?? "none",
+      }}
+    />
+  );
 }
 
 /** A footnote or endnote drawn as static HTML. */
@@ -345,6 +396,8 @@ export function PageArea({ ctl }: { ctl: DocController }) {
 
   const sections = ctl.sections();
   const facts = ctl.pageFacts();
+  const pageColor = typeof ctl.state.doc.attrs.background === "string" ? `#${ctl.state.doc.attrs.background}` : undefined;
+  const pageBorders = ((pageAttrs as Record<string, unknown> | null)?.pgBorders as Record<string, unknown> | null) ?? null;
   void pageList;
   const pages = paged
     ? Array.from({ length: pageCount }, (_, i) => {
@@ -361,7 +414,12 @@ export function PageArea({ ctl }: { ctl: DocController }) {
           ctl.emit();
         };
         return (
-          <div key={i} className="page" style={{ left: pageLeft, top, width: pageW, height: pageH }} data-page={i + 1}>
+          <div key={i} className={`page ${pageColor ? "has-color" : ""}`} style={{ left: pageLeft, top, width: pageW, height: pageH, background: pageColor }} data-page={i + 1}>
+            {pageBorders && <PageBorders b={pageBorders} geo={geo} z={z} />}
+            {(() => {
+              const w = storyWatermark(ctl.storyDoc("header", headerRef));
+              return w ? <PageWatermark w={w} geo={geo} z={z} /> : null;
+            })()}
             <div
               className={`hf hf-header ${editingHere && headerEdit.kind === "header" ? "editing" : ""}`}
               data-ref={headerRef ?? ""}

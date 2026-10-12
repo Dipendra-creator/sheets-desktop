@@ -11,6 +11,7 @@ import { keyLabel } from "../../../lib/platform";
 import type { DocController } from "../../editor/controller";
 import { DEFAULT_FIND, type FindOptions } from "../../editor/find";
 import { formatDate } from "../../editor/fields";
+import { presetWatermark } from "../../editor/watermark";
 import { countText } from "../../editor/wordcount";
 import { cssColor, fontName, fontStack, HIGHLIGHTS } from "../../model/render";
 import { schema } from "../../model/schema";
@@ -1540,6 +1541,174 @@ function HelpDialog({ kind, onClose }: { kind: "help" | "shortcuts" | "about" | 
   );
 }
 
+// ----------------------------------------------------------------------
+// Design: custom watermark, page borders
+// ----------------------------------------------------------------------
+
+const WATERMARK_TEXTS = ["ASAP", "CONFIDENTIAL", "COPY", "DO NOT COPY", "DRAFT", "ORIGINAL", "PERSONAL", "SAMPLE", "TOP SECRET", "URGENT"];
+
+function WatermarkDialog({ ctl, onClose }: { ctl: DocController; onClose: () => void }) {
+  const current = ctl.currentWatermark();
+  const [on, setOn] = useState(true);
+  const [text, setText] = useState(current?.text ?? "CONFIDENTIAL");
+  const [font, setFont] = useState(current?.font ?? "Calibri");
+  const [color, setColor] = useState(current && current.color.startsWith("#") ? current.color : "#C0C0C0");
+  const [diagonal, setDiagonal] = useState(current ? current.rotation !== 0 : true);
+  const [semi, setSemi] = useState(current ? current.opacity < 1 : true);
+  return (
+    <Dialog
+      title="Printed Watermark"
+      onClose={onClose}
+      width={420}
+      onSubmit={() => {
+        ctl.setWatermark(on && text.trim() ? presetWatermark(text.trim(), diagonal, font, color, semi) : null);
+        onClose();
+      }}
+    >
+      <label className="fc-row check">
+        <input type="radio" checked={!on} onChange={() => setOn(false)} />
+        No watermark
+      </label>
+      <label className="fc-row check">
+        <input type="radio" checked={on} onChange={() => setOn(true)} />
+        Text watermark
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Text:</span>
+        <input list="wm-texts" value={text} disabled={!on} onChange={(e) => setText(e.target.value)} />
+        <datalist id="wm-texts">
+          {WATERMARK_TEXTS.map((t) => (
+            <option key={t} value={t} />
+          ))}
+        </datalist>
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Font:</span>
+        <select value={font} disabled={!on} onChange={(e) => setFont(e.target.value)}>
+          {[...new Set([font, ...FONTS])].map((f) => (
+            <option key={f} value={f}>
+              {f}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Color:</span>
+        <input type="color" value={color} disabled={!on} onChange={(e) => setColor(e.target.value)} />
+        <label className="fc-row check">
+          <input type="checkbox" checked={semi} disabled={!on} onChange={(e) => setSemi(e.target.checked)} />
+          Semitransparent
+        </label>
+      </label>
+      <div className="fc-row">
+        <span className="lbl">Layout:</span>
+        <label className="fc-row check">
+          <input type="radio" checked={diagonal} disabled={!on} onChange={() => setDiagonal(true)} />
+          Diagonal
+        </label>
+        <label className="fc-row check">
+          <input type="radio" checked={!diagonal} disabled={!on} onChange={() => setDiagonal(false)} />
+          Horizontal
+        </label>
+      </div>
+    </Dialog>
+  );
+}
+
+const PAGE_BORDER_STYLES: [string, string][] = [
+  ["single", "Single"],
+  ["dotted", "Dotted"],
+  ["dashed", "Dashed"],
+  ["double", "Double"],
+  ["thick", "Thick"],
+  ["triple", "Triple"],
+  ["thinThickSmallGap", "Thin-thick"],
+  ["threeDEmboss", "3-D emboss"],
+];
+const PAGE_BORDER_WIDTHS: [number, string][] = [
+  [2, "¼ pt"],
+  [4, "½ pt"],
+  [6, "¾ pt"],
+  [8, "1 pt"],
+  [12, "1 ½ pt"],
+  [18, "2 ¼ pt"],
+  [24, "3 pt"],
+  [36, "4 ½ pt"],
+  [48, "6 pt"],
+];
+
+function PageBordersDialog({ ctl, onClose }: { ctl: DocController; onClose: () => void }) {
+  const page = (ctl.state.doc.attrs.page as Attrs | null) ?? {};
+  const cur = (page.pgBorders as Attrs | null) ?? null;
+  const top = (cur?.top as Attrs | undefined) ?? null;
+  const [setting, setSetting] = useState<"none" | "box">(cur ? "box" : "none");
+  const [val, setVal] = useState(String(top?.val ?? "single"));
+  const [color, setColor] = useState(top?.color && top.color !== "auto" ? `#${top.color}` : "#000000");
+  const [sz, setSz] = useState(Number(top?.sz ?? 4));
+  const [from, setFrom] = useState<"page" | "text">(cur?.offsetFrom === "text" ? "text" : "page");
+  const [space, setSpace] = useState(String(top?.space ?? 24));
+  return (
+    <Dialog
+      title="Page Borders"
+      onClose={onClose}
+      width={420}
+      onSubmit={() => {
+        if (setting === "none") ctl.setPageBorders(null);
+        else {
+          const side = { val, sz: String(sz), space: String(Math.max(0, Math.min(31, Number(space) || 0))), color: color.replace("#", "").toUpperCase() };
+          ctl.setPageBorders({ offsetFrom: from, top: side, left: side, bottom: side, right: side });
+        }
+        onClose();
+      }}
+    >
+      <div className="fc-label">Setting</div>
+      <div className="preset-row">
+        <button type="button" className={`btn ${setting === "none" ? "primary" : ""}`} onClick={() => setSetting("none")}>
+          None
+        </button>
+        <button type="button" className={`btn ${setting === "box" ? "primary" : ""}`} onClick={() => setSetting("box")}>
+          Box
+        </button>
+      </div>
+      <label className="fc-row">
+        <span className="lbl">Style:</span>
+        <select value={val} disabled={setting === "none"} onChange={(e) => setVal(e.target.value)}>
+          {PAGE_BORDER_STYLES.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Color:</span>
+        <input type="color" value={color} disabled={setting === "none"} onChange={(e) => setColor(e.target.value)} />
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Width:</span>
+        <select value={sz} disabled={setting === "none"} onChange={(e) => setSz(Number(e.target.value))}>
+          {PAGE_BORDER_WIDTHS.map(([v, l]) => (
+            <option key={v} value={v}>
+              {l}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Measure from:</span>
+        <select value={from} disabled={setting === "none"} onChange={(e) => setFrom(e.target.value as "page" | "text")}>
+          <option value="page">Edge of page</option>
+          <option value="text">Text</option>
+        </select>
+      </label>
+      <label className="fc-row">
+        <span className="lbl">Distance (pt):</span>
+        <input type="number" min={0} max={31} value={space} disabled={setting === "none"} onChange={(e) => setSpace(e.target.value)} />
+      </label>
+    </Dialog>
+  );
+}
+
 /** Renders the dialog the controller asked for. */
 export function DocDialogHost({ ctl }: { ctl: DocController }) {
   const dialog = useDoc(ctl, (c) => c.dialog);
@@ -1594,6 +1763,10 @@ export function DocDialogHost({ ctl }: { ctl: DocController }) {
       return <StylesDialog ctl={ctl} onClose={close} />;
     case "accessibility":
       return <AccessibilityDialog ctl={ctl} onClose={close} />;
+    case "watermark":
+      return <WatermarkDialog ctl={ctl} onClose={close} />;
+    case "pageBorders":
+      return <PageBordersDialog ctl={ctl} onClose={close} />;
     case "help":
     case "shortcuts":
     case "about":

@@ -203,6 +203,8 @@ export function DocView({ info, payload }: { info: DocInfo; payload: DocPayload 
   );
 
   const ctl = useMemo(() => new DocController(info, payload, host), [info.id]);
+  // Development builds expose the editor to test scripts
+  if (import.meta.env.DEV) (window as unknown as { __docCtl?: DocController }).__docCtl = ctl;
   const title = useDoc(ctl, (c) => c.info.title);
   const dirty = useDoc(ctl, (c) => c.info.dirty);
   const status = useDoc(ctl, (c) => c.status);

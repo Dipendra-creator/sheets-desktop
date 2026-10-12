@@ -4,15 +4,16 @@ import { KeyTipsLayer } from "../../../workbook/ribbon/KeyTips";
 import type { DocController } from "../../editor/controller";
 import { useDoc } from "../hooks";
 import { HomeTab } from "./HomeTab";
-import { HeaderFooterTab, HelpTab, InsertTab, LayoutTab, PictureTab, ReferencesTab, ReviewTab, TableDesignTab, TableLayoutTab, ViewTab } from "./OtherTabs";
+import { DesignTab, HeaderFooterTab, HelpTab, InsertTab, LayoutTab, PictureTab, ReferencesTab, ReviewTab, TableDesignTab, TableLayoutTab, ViewTab } from "./OtherTabs";
 
-const TABS = ["Home", "Insert", "Layout", "References", "Review", "View", "Help"] as const;
+const TABS = ["Home", "Insert", "Design", "Layout", "References", "Review", "View", "Help"] as const;
 
 /** Word's KeyTips letters. */
 const TAB_KEYS: Record<string, string> = {
   File: "F",
   Home: "H",
   Insert: "N",
+  Design: "G",
   Layout: "P",
   References: "S",
   Review: "R",
@@ -113,6 +114,7 @@ export function DocRibbon({ ctl, onFile }: { ctl: DocController; onFile: () => v
       <div className="ribbon-groups">
         {tab === "Home" && <HomeTab ctl={ctl} />}
         {tab === "Insert" && <InsertTab ctl={ctl} />}
+        {tab === "Design" && <DesignTab ctl={ctl} />}
         {tab === "Layout" && <LayoutTab ctl={ctl} />}
         {tab === "References" && <ReferencesTab ctl={ctl} />}
         {tab === "Review" && <ReviewTab ctl={ctl} />}

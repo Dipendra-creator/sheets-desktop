@@ -434,6 +434,32 @@ fn regex_like(rels: &str, id: &str) -> String {
 }
 
 #[test]
+fn page_color() {
+    let bytes = sample_docx();
+    let opened = open(&bytes).unwrap();
+    let mut doc = opened.payload["doc"].clone();
+    assert!(doc["attrs"]["background"].is_null());
+    // Set a page color: written before the body, shown by the setting
+    doc["attrs"]["background"] = json!("FFF2CC");
+    let input = |doc: &Value, state: &super::DocState| {
+        save(state, &SaveInput { doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None, footnotes: None, endnotes: None, stories: None }).unwrap()
+    };
+    let saved = input(&doc, &opened.state);
+    let xml = document_xml(&saved);
+    assert!(xml.contains("<w:background w:color=\"FFF2CC\"/><w:body>"), "{}", &xml[..400.min(xml.len())]);
+    assert!(Package::read(&saved).unwrap().text("word/settings.xml").unwrap().contains("<w:displayBackgroundShape/>"));
+    // Reopened: the color comes back, and a change keeps the element
+    let again = open(&saved).unwrap();
+    assert_eq!(again.payload["doc"]["attrs"]["background"], "FFF2CC");
+    let mut doc2 = again.payload["doc"].clone();
+    doc2["attrs"]["background"] = json!("DEEAF6");
+    assert!(document_xml(&input(&doc2, &again.state)).contains("<w:background w:color=\"DEEAF6\"/>"));
+    // Removed
+    doc2["attrs"]["background"] = Value::Null;
+    assert!(!document_xml(&input(&doc2, &again.state)).contains("w:background"));
+}
+
+#[test]
 fn blank_document() {
     let opened = super::blank();
     assert_eq!(opened.payload["doc"]["content"].as_array().unwrap().len(), 1);

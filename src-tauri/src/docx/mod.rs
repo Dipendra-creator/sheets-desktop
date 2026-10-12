@@ -58,6 +58,8 @@ pub struct DocState {
     pub root_start: String,
     /// The final section's `w:sectPr`, raw.
     pub body_sect: Option<String>,
+    /// The page color (`w:background`), raw.
+    pub background: Option<String>,
     /// Content control properties by id.
     pub sdts: Map<String, Value>,
     pub hf: Vec<HfRef>,
@@ -107,6 +109,14 @@ fn sect_info(root_start: &str, raw: Option<&str>) -> (Value, bool, Vec<(String, 
         let name = el.tag_name().name();
         match name {
             "pgSz" | "pgMar" | "cols" | "pgNumType" => page[name] = xml::attr_map(el),
+            // Page borders: where they're measured from, and each side
+            "pgBorders" => {
+                let mut b = xml::attr_map(el);
+                for side in el.children().filter(|c| c.is_element()) {
+                    b[side.tag_name().name()] = xml::attr_map(side);
+                }
+                page[name] = b;
+            }
             "titlePg" => title_pg = xml::on_off(el),
             "headerReference" | "footerReference" => {
                 let kind = if name == "headerReference" { "header" } else { "footer" };
@@ -294,9 +304,13 @@ pub fn open(bytes: &[u8]) -> Result<Opened, String> {
         .unwrap_or_else(|| json!({}));
 
     let even_odd = settings.get("evenAndOddHeaders").and_then(|v| v.as_bool()).unwrap_or(false);
+    // Page color (Design > Page Color)
+    let background_node = root.children().find(|c| is_w(*c, "background"));
+    let background = background_node.map(|n| doc_text[n.range()].to_string());
+    let page_color = background_node.and_then(|n| wattr(n, "color")).filter(|c| *c != "auto").map(String::from);
     let doc = json!({
         "type": "doc",
-        "attrs": { "page": page, "titlePg": title_pg, "evenOdd": even_odd },
+        "attrs": { "page": page, "titlePg": title_pg, "evenOdd": even_odd, "background": page_color },
         "content": blocks,
     });
     let payload = json!({
@@ -318,6 +332,7 @@ pub fn open(bytes: &[u8]) -> Result<Opened, String> {
         main,
         root_start,
         body_sect,
+        background,
         sdts,
         hf,
         hf_roots,
@@ -642,13 +657,29 @@ pub fn save(state: &DocState, input: &SaveInput) -> Result<Vec<u8>, String> {
 
     let title_pg = attrs.get("titlePg").and_then(|v| v.as_bool());
     let sect = sect_xml(state.body_sect.as_deref(), &state.root_start, &page, title_pg, &refs);
-    let root = ensure_namespaces(&state.root_start, &format!("{body_xml}{sect}"));
+    // The page color: kept as it was, recolored, added or removed
+    let color = attrs.get("background").and_then(|v| v.as_str()).filter(|c| !c.is_empty());
+    let background = match (color, state.background.as_deref()) {
+        (Some(c), Some(raw)) if write::tag_attr_value(raw, "background", "w:color") == Some(c) => raw.to_string(),
+        (Some(c), Some(raw)) => write::set_tag_attr(raw, "background", "w:color", c),
+        (Some(c), None) => format!("<w:background w:color=\"{}\"/>", xml::esc(c)),
+        (None, _) => String::new(),
+    };
+    let root = ensure_namespaces(&state.root_start, &format!("{background}{body_xml}{sect}"));
     let qn = qname(&root);
     let prefix = qn.split(':').next().filter(|p| *p != qn).map(|p| format!("{p}:")).unwrap_or_default();
     pkg.set(
         &main,
-        format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n{root}<{prefix}body>{body_xml}{sect}</{prefix}body></{qn}>"),
+        format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n{root}{background}<{prefix}body>{body_xml}{sect}</{prefix}body></{qn}>"),
     );
+    // Word shows the page color only with this setting on
+    if color.is_some() && state.background.is_none() {
+        if let Some(sp) = part_by_rel(&pkg, &main, REL_SETTINGS) {
+            if let Some(updated) = pkg.text(&sp).and_then(|t| add_display_background(&t)) {
+                pkg.set(&sp, updated);
+            }
+        }
+    }
 
     // Comments added, edited or deleted in the app
     if let Some(edits) = input.comments.and_then(|c| c.as_object()).filter(|c| !c.is_empty()) {
@@ -861,6 +892,24 @@ fn note_items(original: Option<&str>, kind: &str) -> Option<(String, Vec<(Option
             Some((root, vec![(None, note("-1", "separator", "separator")), (None, note("0", "continuationSeparator", "continuationSeparator"))]))
         }
     }
+}
+
+/// Adds `w:displayBackgroundShape` to `settings.xml` (page colors show).
+fn add_display_background(text: &str) -> Option<String> {
+    let doc = parse(text).ok()?;
+    let root = doc.root_element();
+    if root.children().any(|c| is_w(c, "displayBackgroundShape")) {
+        return None;
+    }
+    // CT_Settings order: after w:doNotDisplayPageBoundaries
+    const BEFORE: &[&str] = &["writeProtection", "view", "zoom", "removePersonalInformation", "removeDateAndTime", "doNotDisplayPageBoundaries"];
+    let anchor = root
+        .children()
+        .filter(|c| c.is_element())
+        .find(|c| !BEFORE.iter().any(|n| is_w(*c, n)))
+        .map(|n| n.range().start)
+        .unwrap_or_else(|| text[..root.range().end].rfind("</").unwrap_or(root.range().end));
+    Some(format!("{}<w:displayBackgroundShape/>{}", &text[..anchor], &text[anchor..]))
 }
 
 /// Lists the separator notes in `settings.xml` (`w:footnotePr` / `w:endnotePr`).

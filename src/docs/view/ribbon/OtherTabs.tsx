@@ -6,6 +6,7 @@ import { Icon } from "../../../components/Icon";
 import { docsApi, type DocWindow } from "../../api";
 import type { DocController, Markup } from "../../editor/controller";
 import { geometryOf } from "../../editor/pagination";
+import { presetWatermark, WATERMARK_PRESETS } from "../../editor/watermark";
 import { num } from "../../model/units";
 import { useDoc } from "../hooks";
 import { SymbolGrid, TableGrid } from "./galleries";
@@ -53,6 +54,16 @@ export function InsertTab({ ctl }: { ctl: DocController }) {
     <>
       <RibbonGroup label="Pages">
         <Stack>
+          <SmallButton
+            icon="coverPage"
+            label="Cover Page"
+            dropdown={[
+              { header: "Built-in" },
+              { label: "Banded", description: "A colored band with the title and subtitle", onClick: () => ctl.insertCoverPage("banded") },
+              { label: "Bold", description: "A large title with an accent bar", onClick: () => ctl.insertCoverPage("bold") },
+              { label: "Simple", description: "Centered title, subtitle, author and date", onClick: () => ctl.insertCoverPage("simple") },
+            ]}
+          />
           <SmallButton icon="blankPage" label="Blank Page" onClick={() => ctl.blankPage()} />
           <SmallButton icon="pageBreak" label="Page Break" title="Page Break (Ctrl+Enter)" onClick={() => ctl.pageBreak()} />
         </Stack>
@@ -67,7 +78,11 @@ export function InsertTab({ ctl }: { ctl: DocController }) {
         <Stack>
           <SmallButton icon="link" label="Link" title="Insert Link (Ctrl+K)" onClick={() => ctl.openDialog("link")} />
           <SmallButton icon="bookmark" label="Bookmark" onClick={() => ctl.openDialog("bookmark")} />
+          <SmallButton icon="link" label="Cross-reference" onClick={() => ctl.openDialog("link", { bookmarks: true })} />
         </Stack>
+      </RibbonGroup>
+      <RibbonGroup label="Comments">
+        <BigButton icon="comment" label="Comment" title="New Comment (Ctrl+Alt+M)" onClick={() => ctl.newComment()} />
       </RibbonGroup>
       <RibbonGroup label="Header & Footer">
         <BigButton icon="headerIcon" label="Header" dropdown={headerMenu("header")} />
@@ -252,6 +267,86 @@ export function LayoutTab({ ctl }: { ctl: DocController }) {
 // ----------------------------------------------------------------------
 // References
 // ----------------------------------------------------------------------
+
+// ----------------------------------------------------------------------
+// Design
+// ----------------------------------------------------------------------
+
+function WatermarkGallery({ ctl, close }: { ctl: DocController; close: () => void }) {
+  return (
+    <div className="gallery-panel watermark-gallery">
+      {WATERMARK_PRESETS.map((g) => (
+        <div key={g.group}>
+          <div className="menu-header">{g.group}</div>
+          <div className="wm-grid">
+            {g.items.map(([text, diagonal]) => (
+              <button
+                key={`${text}-${diagonal}`}
+                className="wm-tile"
+                title={`${text} ${diagonal ? 1 : 2}`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => {
+                  close();
+                  ctl.setWatermark(presetWatermark(text, diagonal));
+                }}
+              >
+                <span className="wm-page">
+                  <span className={`wm-text ${diagonal ? "diagonal" : ""}`}>{text}</span>
+                </span>
+                <span className="wm-name">
+                  {text === "ASAP" ? text : text.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase())} {diagonal ? 1 : 2}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      <div className="menu-sep" />
+      <button
+        className="menu-item"
+        onClick={() => {
+          close();
+          ctl.openDialog("watermark");
+        }}
+      >
+        <span className="menu-label">Custom Watermark…</span>
+      </button>
+      <button
+        className="menu-item"
+        onClick={() => {
+          close();
+          ctl.setWatermark(null);
+        }}
+      >
+        <span className="menu-label">Remove Watermark</span>
+      </button>
+    </div>
+  );
+}
+
+export function DesignTab({ ctl }: { ctl: DocController }) {
+  return (
+    <>
+      <RibbonGroup label="Page Background">
+        <BigButton icon="watermark" label="Watermark" dropdown={(close) => <WatermarkGallery ctl={ctl} close={close} />} />
+        <BigButton
+          icon="pageColorBig"
+          label={"Page\nColor"}
+          dropdown={(close) => (
+            <ColorPicker
+              noneLabel="No Color"
+              onPick={(c) => {
+                close();
+                ctl.setPageColor(c || null);
+              }}
+            />
+          )}
+        />
+        <BigButton icon="pageBorders" label={"Page\nBorders"} onClick={() => ctl.openDialog("pageBorders")} />
+      </RibbonGroup>
+    </>
+  );
+}
 
 export function ReferencesTab({ ctl }: { ctl: DocController }) {
   const f = useDoc(ctl, (c) => c.format);

@@ -156,6 +156,21 @@ fn patch_every_tag_attr(xml: &str, tag: &str, attr: &str, value: &str) -> String
     out
 }
 
+/// An attribute of the first `tag` element of a fragment.
+pub fn tag_attr_value<'x>(xml: &'x str, tag: &str, attr: &str) -> Option<&'x str> {
+    tag_attr(xml, tag, attr)
+}
+
+/// Sets an attribute of the first `tag` element (adding it when missing).
+pub fn set_tag_attr(xml: &str, tag: &str, attr: &str, value: &str) -> String {
+    if tag_attr(xml, tag, attr).is_some() {
+        return patch_tag_attr(xml, tag, attr, value);
+    }
+    let Some(start) = xml.find(&format!("<w:{tag}")) else { return xml.to_string() };
+    let at = start + tag.len() + 3;
+    format!("{} {attr}=\"{}\"{}", &xml[..at], esc(value), &xml[at..])
+}
+
 fn tag_attr<'x>(xml: &'x str, tag: &str, attr: &str) -> Option<&'x str> {
     let mut pos = 0;
     while let Some(i) = xml[pos..].find('<') {
@@ -749,6 +764,24 @@ pub fn sect_xml(original: Option<&str>, root_start: &str, page: &Value, title_pg
     }
     if let Some(cols) = page.get("cols").filter(|v| v.is_object()) {
         replace(&mut items, "cols", Some(format!("<w:cols{}/>", attrs_xml(cols))));
+    }
+    // Page borders (Design > Page Borders); null removes them
+    match page.get("pgBorders") {
+        Some(b) if b.is_object() => {
+            let own: serde_json::Map<String, Value> = b
+                .as_object()
+                .map(|o| o.iter().filter(|(_, v)| !v.is_object()).map(|(k, v)| (k.clone(), v.clone())).collect())
+                .unwrap_or_default();
+            let mut sides = String::new();
+            for side in ["top", "left", "bottom", "right"] {
+                if let Some(v) = b.get(side).filter(|v| v.is_object()) {
+                    sides.push_str(&format!("<w:{side}{}/>", attrs_xml(v)));
+                }
+            }
+            replace(&mut items, "pgBorders", Some(format!("<w:pgBorders{}>{sides}</w:pgBorders>", attrs_xml(&Value::Object(own)))));
+        }
+        Some(Value::Null) => replace(&mut items, "pgBorders", None),
+        _ => {}
     }
     match title_pg {
         Some(true) => replace(&mut items, "titlePg", Some("<w:titlePg/>".into())),

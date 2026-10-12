@@ -1283,8 +1283,15 @@
 
 .font-grid {
   display: grid;
-  grid-template-columns: 2fr 1.2fr 0.8fr;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 0.8fr);
   gap: 10px;
+}
+
+.font-grid input,
+.font-grid .listbox {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .font-grid label {
@@ -1316,8 +1323,19 @@
 
 .two-col {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 8px 16px;
+}
+
+/* Fields shrink to their column instead of overflowing the dialog */
+.two-col .fc-row .lbl {
+  min-width: 84px;
+}
+
+.two-col .fc-row input:not([type="checkbox"]):not([type="radio"]),
+.two-col .fc-row select {
+  min-width: 0;
+  width: 100%;
 }
 
 .preset-row {
@@ -1591,4 +1609,84 @@
   .doc-note.editing {
     outline: none !important;
   }
+}
+
+/* ---------------------------------------------------------------- page background */
+
+.page-watermark {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+  transform-origin: 50% 50%;
+}
+
+.page-borders {
+  position: absolute;
+  pointer-events: none;
+}
+
+/* Word doesn't print page colors unless asked to */
+@media print {
+  .page.has-color {
+    background: #fff !important;
+  }
+}
+
+/* ---------------------------------------------------------------- watermark gallery */
+
+.watermark-gallery {
+  padding: 4px 0;
+  width: 420px;
+}
+
+.wm-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 6px 10px;
+}
+
+.wm-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.wm-tile:hover {
+  background: var(--hover);
+  border-color: var(--border);
+}
+
+.wm-page {
+  position: relative;
+  width: 60px;
+  height: 78px;
+  background: #fff;
+  box-shadow: 0 0 0 1px #c8c8c8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.wm-text {
+  font: 700 9px Calibri, Carlito, sans-serif;
+  color: #b4b4b4;
+  white-space: nowrap;
+}
+
+.wm-text.diagonal {
+  transform: rotate(-45deg);
+}
+
+.wm-name {
+  font-size: 11px;
+  white-space: nowrap;
 }

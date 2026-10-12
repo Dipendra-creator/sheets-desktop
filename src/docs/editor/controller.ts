@@ -52,6 +52,7 @@ import { BULLET_FORMATS, findFormat, Lists, NUMBER_FORMATS, type ListFormat } fr
 import { NOTE_KINDS, newNote, noteReference, noteText, referencedNotes, renderNote, type NoteKind } from "./notes";
 import { geometryOf, NO_NOTES, paginationPlugin, paginators, type HfType, type NoteLayout, type PageInfo } from "./pagination";
 import { addStoryRef, pageFacts, resolveStory, sectionsOf, type PageFacts, type SectionInfo, type StoryKind } from "./sections";
+import { storyWatermark, watermarkNode, withoutWatermark, type Watermark } from "./watermark";
 import { DocTableView } from "./tableview";
 import { TabView, tabLayouts, tabsPlugin } from "./tabs";
 import { nextChange, resolveChanges, trackedDelete, trackedPaste, trackedTextInput, type Reviewer } from "./track";
@@ -240,6 +241,18 @@ export class DocController {
     const sheet = this.sheet;
     const settings = this.payload.settings ?? {};
     return [
+      // A key pressed right after the caret moved (Ctrl+End, then Enter)
+      // can arrive before the browser reports the move: read it first
+      new Plugin({
+        props: {
+          handleKeyDown: (view, event) => {
+            if (event.key === "Enter" || event.key === "Backspace" || event.key === "Delete" || event.key === "Tab") {
+              (view as unknown as { domObserver?: { flush?: () => void } }).domObserver?.flush?.();
+            }
+            return false;
+          },
+        },
+      }),
       autoFormatRules(this),
       keymap(wordKeymap(this)),
       keymap({
@@ -1197,6 +1210,51 @@ export class DocController {
     });
   }
 
+  /** Insert > Cover Page: a designed first page (title, subtitle, author, date) before the document. */
+  insertCoverPage(design: "banded" | "simple" | "bold") {
+    const view = this.view;
+    if (!view) return;
+    this.headerEdit = null;
+    this.noteEdit = null;
+    const title = this.coreEdits.title || this.payload.core?.title || (this.info.path ? this.info.title : "[Document title]");
+    const author = this.host.author() || "Author";
+    const date = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
+    const style = (id: string) => (this.sheet.get(id) ? id : null);
+    const P = (attrs: Attrs, text: string, marks: Mark[] = []) => schema.nodes.paragraph.create(attrs, text ? schema.text(text, marks) : undefined);
+    const m = (type: string, attrs: Attrs = {}) => schema.marks[type].create(attrs);
+    const accent = "1F3864";
+    const white = m("color", { val: "FFFFFF" });
+    const sp = (before: number, after = 0) => ({ before: String(before), after: String(after) });
+    let nodes: PMNode[];
+    if (design === "banded") {
+      nodes = [
+        P({ spacing: sp(2400, 0), shd: { val: "clear", color: "auto", fill: accent }, ind: { left: "-360", right: "-360" } }, title, [m("size", { val: "64", cs: "64" }), m("bold"), white]),
+        P({ spacing: sp(0, 2400), shd: { val: "clear", color: "auto", fill: accent }, ind: { left: "-360", right: "-360" } }, "[Document subtitle]", [m("size", { val: "32", cs: "32" }), white]),
+        P({ spacing: sp(0, 60) }, author, [m("size", { val: "28", cs: "28" }), m("color", { val: accent })]),
+        P({ spacing: sp(0, 60) }, date, [m("size", { val: "24", cs: "24" })]),
+      ];
+    } else if (design === "bold") {
+      nodes = [
+        P({ spacing: sp(1800, 0), pBdr: { left: { val: "single", sz: "48", space: "12", color: accent } }, ind: { left: "360" } }, title, [m("size", { val: "80", cs: "80" }), m("bold"), m("color", { val: accent })]),
+        P({ spacing: sp(120, 2400), pBdr: { left: { val: "single", sz: "48", space: "12", color: accent } }, ind: { left: "360" } }, "[Document subtitle]", [m("size", { val: "32", cs: "32" })]),
+        P({ spacing: sp(0, 60), jc: "right" }, author, [m("size", { val: "24", cs: "24" }), m("bold")]),
+        P({ spacing: sp(0, 60), jc: "right" }, date, [m("size", { val: "24", cs: "24" })]),
+      ];
+    } else {
+      nodes = [
+        P({ style: style("Title"), jc: "center", spacing: sp(3600, 240) }, title),
+        P({ style: style("Subtitle"), jc: "center" }, "[Document subtitle]"),
+        P({ jc: "center", spacing: sp(2400, 60) }, author, [m("size", { val: "28", cs: "28" })]),
+        P({ jc: "center" }, date),
+      ];
+    }
+    nodes.push(schema.nodes.paragraph.create(null, schema.nodes.hard_break.create({ type: "page" })));
+    const tr = view.state.tr.insert(0, nodes);
+    tr.setSelection(TextSelection.create(tr.doc, 1));
+    this.dispatch(tr.scrollIntoView());
+    view.focus();
+  }
+
   lineBreak() {
     this.apply((state, dispatch) => dispatch(state.tr.replaceSelectionWith(schema.nodes.hard_break.create({ type: "line" })).scrollIntoView()));
   }
@@ -1475,6 +1533,62 @@ export class DocController {
       return true;
     });
     requestAnimationFrame(() => this.relayout());
+  }
+
+  // ------------------------------------------------------------------
+  // Design: page color, watermark, page borders
+  // ------------------------------------------------------------------
+
+  /** Design > Page Color (null: no color). */
+  setPageColor(color: string | null) {
+    this.run((state, dispatch) => {
+      dispatch?.(state.tr.setDocAttribute("background", color ? color.replace(/^#/, "").toUpperCase() : null));
+      return true;
+    });
+  }
+
+  /** The watermark on the page with the cursor. */
+  currentWatermark(): Watermark | null {
+    return storyWatermark(this.storyDoc("header", this.storyTarget("header", this.currentPage).ref));
+  }
+
+  /** Design > Watermark: puts it in every header of the document (null removes it). */
+  setWatermark(w: Watermark | null) {
+    this.headerEdit = null;
+    let n = Math.floor(Math.random() * 50000);
+    const style = this.storyStyle("header");
+    const targets: { ref: string; doc: PMNode | null }[] = [
+      ...Object.entries(this.headers).map(([t, d]) => ({ ref: `final:${t}`, doc: d })),
+      ...Object.entries(this.stories).filter(([rid]) => this.storyKinds[rid] === "header").map(([rid, d]) => ({ ref: rid, doc: d })),
+    ].filter((t) => t.doc);
+    if (!targets.length) {
+      if (!w) return;
+      targets.push({ ref: "final:default", doc: null });
+    }
+    for (const t of targets) {
+      let doc = t.doc ? (withoutWatermark(t.doc) ?? t.doc) : schema.nodes.doc.create(null, schema.nodes.paragraph.create({ style }));
+      if (w) {
+        const mark = watermarkNode(w, n++);
+        const first = doc.firstChild;
+        const rest: PMNode[] = [];
+        doc.forEach((c, _o, i) => i > 0 && rest.push(c));
+        doc =
+          first?.type.name === "paragraph"
+            ? schema.nodes.doc.create(doc.attrs, [first.type.create(first.attrs, Fragment.from(mark).append(first.content), first.marks), ...rest])
+            : schema.nodes.doc.create(doc.attrs, [schema.nodes.paragraph.create({ style }, mark), ...(first ? [first] : []), ...rest]);
+      }
+      if (t.ref.startsWith("final:")) this.headerChanged("header", t.ref.slice(6), doc);
+      else this.storyChanged({ kind: "header", type: "default", page: 0, ref: t.ref, section: 0 }, doc);
+    }
+  }
+
+  /** Design > Page Borders (null: none). */
+  setPageBorders(borders: Attrs | null) {
+    this.run((state, dispatch) => {
+      const page = { ...((state.doc.attrs.page as Attrs) ?? {}), pgBorders: borders };
+      dispatch?.(state.tr.setDocAttribute("page", page));
+      return true;
+    });
   }
 
   setOrientation(landscape: boolean) {
