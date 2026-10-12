@@ -7,6 +7,7 @@ import { Fragment, type Mark, type Node as PMNode } from "prosemirror-model";
 import type { EditorState, Transaction } from "prosemirror-state";
 import { schema } from "../model/schema";
 import type { StyleSheet } from "../model/styles";
+import { formatNumber } from "../model/numbering";
 import type { PageInfo } from "./pagination";
 
 type Attrs = Record<string, unknown>;
@@ -104,15 +105,21 @@ export function formatDate(d: Date, picture: string): string {
 }
 
 /** The result a simple field shows now, or null when it can't be computed. */
-export function fieldResult(instr: string, page: number, pages: number): string | null {
+/** Number formats of the \\* switch (PAGE \\* roman…). */
+const FIELD_FORMATS: Record<string, string> = { roman: "lowerRoman", ROMAN: "upperRoman", alphabetic: "lowerLetter", ALPHABETIC: "upperLetter", arabic: "decimal", Arabic: "decimal" };
+
+export function fieldResult(instr: string, page: number, pages: number, opts: { label?: string; sectionPages?: number } = {}): string | null {
   const name = fieldName(instr);
   const picture = /\\@\s+"([^"]+)"/.exec(instr)?.[1];
+  const fmt = /\\\*\s+(\w+)/.exec(instr)?.[1];
+  const number = (n: number, label?: string) => (fmt && FIELD_FORMATS[fmt] ? formatNumber(n, FIELD_FORMATS[fmt]) : (label ?? String(n)));
   switch (name) {
     case "PAGE":
-      return String(page);
+      return number(page, opts.label);
     case "NUMPAGES":
+      return number(pages);
     case "SECTIONPAGES":
-      return String(pages);
+      return number(opts.sectionPages ?? pages);
     case "DATE":
     case "CREATEDATE":
     case "SAVEDATE":

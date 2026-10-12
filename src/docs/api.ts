@@ -93,8 +93,11 @@ export interface DocPayload {
   numbering: Numbering;
   theme: Theme;
   settings: { defaultTabStop?: number; evenAndOddHeaders?: boolean; mirrorMargins?: boolean; compatibilityMode?: number | null };
-  footnotes: Record<string, string>;
-  endnotes: Record<string, string>;
+  /** Headers and footers of the other sections, by relationship id. */
+  stories?: Record<string, { kind: "header" | "footer"; content: unknown[] } | null>;
+  /** Footnotes / endnotes by id (null: deleted in an earlier session). */
+  footnotes: Record<string, DocJSON | null>;
+  endnotes: Record<string, DocJSON | null>;
   comments: Record<string, { author: string | null; initials: string | null; date: string | null; text: string }>;
   core: Record<string, string>;
 }
@@ -105,8 +108,13 @@ export interface DocSnapshot {
   footers: Record<string, unknown | null>;
   stats: { pages: number; words: number; chars: number; charsWithSpaces: number; paragraphs: number; lines: number };
   core?: Record<string, string>;
-  /** Comments added or edited (null: deleted) since the last save. */
+  /** Comments added or edited (null: deleted) since opening. */
   comments?: Record<string, { author: string; initials: string; date: string; text: string } | null>;
+  /** Footnotes / endnotes added or edited (null: deleted) since opening. */
+  footnotes?: Record<string, unknown | null>;
+  endnotes?: Record<string, unknown | null>;
+  /** Other sections' headers and footers edited since opening. */
+  stories?: Record<string, { kind: "header" | "footer"; content: unknown[] }>;
 }
 
 /** Attributes of a picture added to the document. */

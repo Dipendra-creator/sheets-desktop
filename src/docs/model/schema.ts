@@ -8,6 +8,7 @@
 
 import { Schema, type DOMOutputSpec, type Mark, type MarkSpec, type Node as PMNode, type NodeSpec } from "prosemirror-model";
 import { mediaUrl } from "../api";
+import { anchorLayout } from "./anchor";
 import { borderCss, cssColor, ctx, fontName, fontStack, HIGHLIGHTS, shadingColor } from "./render";
 import { num, str, twips, zpt, ztw, EMU_PER_PX, zpx } from "./units";
 
@@ -477,6 +478,10 @@ const image: NodeSpec = {
   atom: true,
   parseDOM: [
     {
+      tag: "span.img-wrap[data-pm]",
+      getAttrs: (dom) => parseData(dom as HTMLElement),
+    },
+    {
       tag: "img[data-pm]",
       getAttrs: (dom) => parseData(dom as HTMLElement),
     },
@@ -491,15 +496,22 @@ const image: NodeSpec = {
     },
   ],
   toDOM(node) {
+    // The same boxes as the editor's picture view (floating pictures too)
     const a = node.attrs;
     const w = (num(a.cx) ?? 914400) / EMU_PER_PX;
     const h = (num(a.cy) ?? 914400) / EMU_PER_PX;
     const src = imageSrc(a);
-    const style = `width:${zpx(w)};height:${zpx(h)}`;
-    if (!src || !isDrawableImage(String(a.target ?? ""))) {
-      return ["span", { class: "img-missing", style, title: String(a.alt || a.name || "Picture") }, String(a.alt || "Picture")];
+    const target = String(a.target ?? "");
+    const layout = anchorLayout(a.raw as string | null, a.anchor === true);
+    const wrap: Record<string, string> = { class: `img-wrap img-${layout.mode}${layout.behind ? " img-behind" : ""}`, title: String(a.alt || a.name || "") };
+    if (layout.mode === "absolute") {
+      wrap.style = `left:${Number.isFinite(layout.x) ? zpx(layout.x) : `calc(50% - ${w / 2}px * var(--z))`};top:${zpx(layout.y)}`;
     }
-    return ["img", { src, alt: String(a.alt ?? ""), style, draggable: "false" }];
+    const inner: DOMOutputSpec =
+      src && isDrawableImage(target)
+        ? ["img", { src, alt: String(a.alt ?? ""), draggable: "false" }]
+        : ["span", { class: "img-missing" }, a.external ? "Linked picture" : /\.(emf|wmf)$/i.test(target) ? "Picture (EMF/WMF)" : String(a.alt || "Picture")];
+    return ["span", wrap, ["span", { class: "img-box", style: `width:${zpx(w)};height:${zpx(h)}` }, inner]];
   },
 };
 
@@ -547,6 +559,10 @@ const opaque_inline: NodeSpec = {
     }
     if (kind === "footnote" || kind === "endnote") {
       return ["span", { class: `opq opq-note opq-${kind}`, "data-note": String(a.noteId ?? "") }];
+    }
+    if (kind === "noteRef") {
+      // The number at the start of a note (filled in when drawn)
+      return ["span", { class: "opq opq-noteRef", "data-kind": String(a.label ?? "") }];
     }
     if (kind === "comment") {
       return ["span", { class: "opq opq-comment", "data-note": String(a.noteId ?? ""), title: "Comment" }];
@@ -609,6 +625,7 @@ const marks: Record<string, MarkSpec> = {
     attrs: attrsOf(["href", "anchor", "tooltip", "tgtFrame", "docLocation", "history"]),
     inclusive: false,
     parseDOM: [
+      { tag: "a[data-pm]", getAttrs: (dom) => parseData(dom as HTMLElement) },
       {
         tag: "a[href]",
         getAttrs: (dom) => {

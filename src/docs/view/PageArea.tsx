@@ -9,31 +9,35 @@ import { EditorState, TextSelection } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { fieldName, fieldResult } from "../editor/fields";
-import type { DocController } from "../editor/controller";
+import type { DocController, HeaderFooterEdit } from "../editor/controller";
 import { formattingPlugin } from "../editor/formatting";
 import { ImageView } from "../editor/imageview";
-import { geometryOf, type PageGeometry } from "../editor/pagination";
+import { noteLabel, noteNumberPlugin, renderNote, type NoteKind } from "../editor/notes";
+import { geometryOf, hfTypeFor, paginators, type PageGeometry } from "../editor/pagination";
+import { resolveStory } from "../editor/sections";
+import { clipboardSerializer } from "../editor/serializer";
 import { layoutTabs, TabView, tabsPlugin } from "../editor/tabs";
 import { schema } from "../model/schema";
 import { useDoc } from "./hooks";
 
 const SCREEN_PAD = 24;
 
-type HfType = "default" | "first" | "even";
 
-function hfTypeFor(page: number, titlePg: boolean, evenOdd: boolean): HfType {
-  if (page === 0 && titlePg) return "first";
-  if (evenOdd && (page + 1) % 2 === 0) return "even";
-  return "default";
+/** What PAGE, NUMPAGES and SECTIONPAGES show on a page. */
+interface PageNumbers {
+  number: number;
+  label: string;
+  pages: number;
+  sectionPages: number;
 }
 
 /** Replaces PAGE / NUMPAGES results in rendered header or footer HTML. */
-function fillFields(root: HTMLElement, page: number, pages: number) {
+function fillFields(root: HTMLElement, nums: PageNumbers) {
   root.querySelectorAll<HTMLElement>(".fld-s").forEach((start) => {
     const instr = start.dataset.instr ?? "";
     const name = fieldName(instr);
     if (name !== "PAGE" && name !== "NUMPAGES" && name !== "SECTIONPAGES") return;
-    const text = fieldResult(instr, page, pages);
+    const text = fieldResult(instr, nums.number, nums.pages, { label: nums.label, sectionPages: nums.sectionPages });
     if (text == null) return;
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
     walker.currentNode = start;
@@ -58,8 +62,9 @@ function fillFields(root: HTMLElement, page: number, pages: number) {
 }
 
 /** A header or footer drawn as static HTML. */
-function StaticStory({ doc, page, pages, ctl }: { doc: PMNode | null; page: number; pages: number; ctl: DocController }) {
+function StaticStory({ doc, nums, ctl }: { doc: PMNode | null; nums: PageNumbers; ctl: DocController }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { number, label, pages, sectionPages } = nums;
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -67,7 +72,7 @@ function StaticStory({ doc, page, pages, ctl }: { doc: PMNode | null; page: numb
     if (!doc) return;
     const frag = DOMSerializer.fromSchema(schema).serializeFragment(doc.content);
     el.appendChild(frag);
-    fillFields(el, page + 1, pages);
+    fillFields(el, { number, label, pages, sectionPages });
     // Tabs (centred titles, right-aligned page numbers)
     const paras = Array.from(el.querySelectorAll<HTMLElement>(":scope > .p"));
     const nodes: PMNode[] = [];
@@ -81,17 +86,18 @@ function StaticStory({ doc, page, pages, ctl }: { doc: PMNode | null; page: numb
       }
     }
     if (items.length) layoutTabs(items, { sheet: ctl.sheet, defaultTab: Number(ctl.payload.settings?.defaultTabStop ?? 720) || 720 });
-  }, [doc, page, pages, ctl]);
+  }, [doc, number, label, pages, sectionPages, ctl]);
   return <div ref={ref} className="pm-doc hf-static" />;
 }
 
 /** Editing a header or footer in place. */
-function StoryEditor({ ctl, kind, type }: { ctl: DocController; kind: "header" | "footer"; type: HfType }) {
+function StoryEditor({ ctl, edit }: { ctl: DocController; edit: HeaderFooterEdit }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const source = (kind === "header" ? ctl.headers : ctl.footers)[type];
+    const kind = edit.kind;
+    const source = ctl.storyDoc(kind, edit.ref);
     const style = ctl.sheet.get(kind === "header" ? "Header" : "Footer") ? (kind === "header" ? "Header" : "Footer") : null;
     const doc = source ?? schema.nodes.doc.create(null, schema.nodes.paragraph.create({ style }));
     const state = EditorState.create({
@@ -118,6 +124,7 @@ function StoryEditor({ ctl, kind, type }: { ctl: DocController; kind: "header" |
     const view = new EditorView(el, {
       state,
       attributes: { class: "pm-doc hf-editor", spellcheck: "true" },
+      clipboardSerializer,
       nodeViews: {
         tab: (node) => new TabView(node),
         image: (node, v, getPos) => new ImageView(node, v, getPos as () => number | undefined),
@@ -125,7 +132,7 @@ function StoryEditor({ ctl, kind, type }: { ctl: DocController; kind: "header" |
       dispatchTransaction(tr) {
         const next = view.state.apply(tr);
         view.updateState(next);
-        if (tr.docChanged) ctl.headerChanged(kind, type, next.doc);
+        if (tr.docChanged) ctl.storyChanged(edit, next.doc);
         ctl.emit();
       },
     });
@@ -136,8 +143,95 @@ function StoryEditor({ ctl, kind, type }: { ctl: DocController; kind: "header" |
       if (ctl.headerEditor === view) ctl.headerEditor = null;
       view.destroy();
     };
-  }, [ctl, kind, type]);
+  }, [ctl, edit]);
   return <div ref={ref} className="hf-edit-host" />;
+}
+
+/** A footnote or endnote drawn as static HTML. */
+function StaticNote({ ctl, doc, label }: { ctl: DocController; doc: PMNode | undefined; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (ref.current && doc) renderNote(ref.current, doc, label, ctl.sheet, Number(ctl.payload.settings?.defaultTabStop ?? 720) || 720);
+  }, [doc, label, ctl]);
+  return <div ref={ref} className="pm-doc note-body" />;
+}
+
+/** Editing a footnote or endnote in place. */
+function NoteEditor({ ctl, kind, id, label }: { ctl: DocController; kind: NoteKind; id: string; label: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const labelRef = useRef(label);
+  labelRef.current = label;
+  useEffect(() => {
+    const el = ref.current;
+    const doc = ctl.notes[kind][id];
+    if (!el || !doc) return;
+    const state = EditorState.create({
+      doc,
+      plugins: [
+        keymap({ "Mod-z": undo, "Mod-y": redo, "Mod-Shift-z": redo }),
+        keymap({
+          Tab: (s, d) => {
+            d?.(s.tr.replaceSelectionWith(schema.nodes.tab.create()).scrollIntoView());
+            return true;
+          },
+          Escape: () => {
+            ctl.closeNote();
+            return true;
+          },
+        }),
+        keymap(baseKeymap),
+        history(),
+        formattingPlugin({ sheet: ctl.sheet, numbering: ctl.payload.numbering }),
+        tabsPlugin({ sheet: ctl.sheet, defaultTab: Number(ctl.payload.settings?.defaultTabStop ?? 720) || 720 }),
+        noteNumberPlugin(() => labelRef.current),
+      ],
+    });
+    const view = new EditorView(el, {
+      state,
+      attributes: { class: "pm-doc note-body note-editor", spellcheck: "true" },
+      clipboardSerializer,
+      nodeViews: {
+        tab: (node) => new TabView(node),
+        image: (node, v, getPos) => new ImageView(node, v, getPos as () => number | undefined),
+      },
+      dispatchTransaction(tr) {
+        const next = view.state.apply(tr);
+        view.updateState(next);
+        if (tr.docChanged) ctl.noteChanged(kind, id, next.doc);
+        ctl.emit();
+      },
+    });
+    ctl.headerEditor = view;
+    view.focus();
+    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)));
+    view.dom.scrollIntoView({ block: "nearest" });
+    return () => {
+      if (ctl.headerEditor === view) ctl.headerEditor = null;
+      view.destroy();
+    };
+  }, [ctl, kind, id]);
+  return <div ref={ref} className="doc-note-edit" />;
+}
+
+function NoteBox({ ctl, kind, id, editing, style }: { ctl: DocController; kind: NoteKind; id: string; editing: boolean; style: React.CSSProperties }) {
+  const n = useDoc(ctl, (c) => c.noteNumber(kind, id));
+  const doc = useDoc(ctl, (c) => c.notes[kind][id]);
+  const label = n != null ? noteLabel(kind, n) : "";
+  return (
+    <div
+      className={`doc-note note-${kind} ${editing ? "editing" : ""}`}
+      style={style}
+      title={editing ? undefined : `${kind === "footnote" ? "Footnote" : "Endnote"} ${label}: click to edit`}
+      onMouseDown={(e) => {
+        if (editing) return;
+        e.preventDefault();
+        e.stopPropagation();
+        ctl.openNote(kind, id);
+      }}
+    >
+      {editing ? <NoteEditor ctl={ctl} kind={kind} id={id} label={label} /> : <StaticNote ctl={ctl} doc={doc} label={label} />}
+    </div>
+  );
 }
 
 export function PageArea({ ctl }: { ctl: DocController }) {
@@ -149,13 +243,16 @@ export function PageArea({ ctl }: { ctl: DocController }) {
   const pageAttrs = useDoc(ctl, (c) => c.state.doc.attrs.page);
   const titlePg = useDoc(ctl, (c) => c.state.doc.attrs.titlePg === true);
   const evenOdd = useDoc(ctl, (c) => c.state.doc.attrs.evenOdd === true);
-  const headers = useDoc(ctl, (c) => ({ ...c.headers }));
-  const footers = useDoc(ctl, (c) => ({ ...c.footers }));
+  useDoc(ctl, (c) => c.hfTick);
+  const pageList = useDoc(ctl, (c) => c.pages);
   const headerEdit = useDoc(ctl, (c) => c.headerEdit);
   const markup = useDoc(ctl, (c) => c.markup);
   const showMarks = useDoc(ctl, (c) => c.showMarks);
   const painter = useDoc(ctl, (c) => !!c.painter);
   const printMode = useDoc(ctl, (c) => c.printMode);
+  const noteLayout = useDoc(ctl, (c) => c.noteLayout);
+  const noteEdit = useDoc(ctl, (c) => c.noteEdit);
+  const measureRef = useRef<HTMLDivElement>(null);
   const PAD = printMode ? 0 : SCREEN_PAD;
   const [width, setWidth] = useState(1000);
 
@@ -166,6 +263,29 @@ export function PageArea({ ctl }: { ctl: DocController }) {
     ctl.view?.focus();
     return () => ctl.destroy();
   }, [ctl]);
+
+  // Notes are measured in a hidden box as wide as the text, at 100%
+  useLayoutEffect(() => {
+    ctl.measureHost = measureRef.current;
+    if (ctl.view) paginators.get(ctl.view)?.invalidate();
+    return () => {
+      if (ctl.measureHost === measureRef.current) ctl.measureHost = null;
+    };
+  }, [ctl]);
+
+  // Headers and footers taller than the margins push the text (measured after drawing)
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || !(viewMode === "print" || viewMode === "read")) return;
+    const heights: Record<string, number> = {};
+    el.querySelectorAll<HTMLElement>(".hf[data-ref]").forEach((hf) => {
+      const key = `${hf.classList.contains("hf-header") ? "header" : "footer"}:${hf.dataset.ref}`;
+      if (heights[key] != null) return;
+      const box = hf.querySelector<HTMLElement>(":scope > .hf-static, :scope > .hf-edit-host");
+      if (box) heights[key] = box.getBoundingClientRect().height / zoom;
+    });
+    ctl.setHfHeights(heights);
+  });
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
@@ -223,41 +343,68 @@ export function PageArea({ ctl }: { ctl: DocController }) {
     }
   };
 
+  const sections = ctl.sections();
+  const facts = ctl.pageFacts();
+  void pageList;
   const pages = paged
     ? Array.from({ length: pageCount }, (_, i) => {
-        const type = hfTypeFor(i, titlePg, evenOdd);
+        const f = facts[i] ?? { section: sections.length - 1, type: hfTypeFor(i, titlePg, evenOdd), number: i + 1, label: String(i + 1), sectionPages: pageCount, firstOfSection: i === 0 };
+        const type = f.type;
+        const nums: PageNumbers = { number: f.number, label: f.label, pages: pageCount, sectionPages: f.sectionPages };
+        const headerRef = resolveStory(sections, f.section, "header", type).ref;
+        const footerRef = resolveStory(sections, f.section, "footer", type).ref;
         const top = PAD + i * pitch;
         const editingHere = headerEdit && headerEdit.page === i;
         const openEditor = (kind: "header" | "footer") => {
-          ctl.headerEdit = { kind, type, page: i };
+          ctl.noteEdit = null;
+          ctl.headerEdit = ctl.storyTarget(kind, i);
           ctl.emit();
         };
         return (
           <div key={i} className="page" style={{ left: pageLeft, top, width: pageW, height: pageH }} data-page={i + 1}>
             <div
               className={`hf hf-header ${editingHere && headerEdit.kind === "header" ? "editing" : ""}`}
+              data-ref={headerRef ?? ""}
               style={{ left: geo.left * z, right: geo.right * z, top: geo.header * z, minHeight: Math.max(8, (geo.top - geo.header) * z - 4) }}
               onDoubleClick={() => openEditor("header")}
             >
               {editingHere && headerEdit.kind === "header" ? (
-                <StoryEditor ctl={ctl} kind="header" type={headerEdit.type} />
+                <StoryEditor ctl={ctl} edit={headerEdit} />
               ) : (
-                <StaticStory doc={headers[type] ?? null} page={i} pages={pageCount} ctl={ctl} />
+                <StaticStory doc={ctl.storyDoc("header", headerRef)} nums={nums} ctl={ctl} />
               )}
               {editingHere && headerEdit.kind === "header" && <span className="hf-tag">{type === "first" ? "First Page Header" : type === "even" ? "Even Page Header" : "Header"}</span>}
             </div>
             <div
               className={`hf hf-footer ${editingHere && headerEdit.kind === "footer" ? "editing" : ""}`}
+              data-ref={footerRef ?? ""}
               style={{ left: geo.left * z, right: geo.right * z, bottom: geo.footer * z, minHeight: Math.max(8, (geo.bottom - geo.footer) * z - 4) }}
               onDoubleClick={() => openEditor("footer")}
             >
               {editingHere && headerEdit.kind === "footer" ? (
-                <StoryEditor ctl={ctl} kind="footer" type={headerEdit.type} />
+                <StoryEditor ctl={ctl} edit={headerEdit} />
               ) : (
-                <StaticStory doc={footers[type] ?? null} page={i} pages={pageCount} ctl={ctl} />
+                <StaticStory doc={ctl.storyDoc("footer", footerRef)} nums={nums} ctl={ctl} />
               )}
               {editingHere && headerEdit.kind === "footer" && <span className="hf-tag">{type === "first" ? "First Page Footer" : type === "even" ? "Even Page Footer" : "Footer"}</span>}
             </div>
+            {noteLayout.separators
+              .filter((sp) => sp.page === i)
+              .map((sp) => (
+                <div key={`sep-${sp.kind}`} className={`doc-note-sep doc-note-sep-${sp.kind}`} style={{ left: geo.left * z, top: sp.top * z }} />
+              ))}
+            {noteLayout.notes
+              .filter((n) => n.page === i)
+              .map((n) => (
+                <NoteBox
+                  key={`${n.kind}-${n.id}`}
+                  ctl={ctl}
+                  kind={n.kind}
+                  id={n.id}
+                  editing={noteEdit?.kind === n.kind && noteEdit.id === n.id}
+                  style={{ left: geo.left * z, top: n.top * z, width: textW }}
+                />
+              ))}
           </div>
         );
       })
@@ -276,10 +423,15 @@ export function PageArea({ ctl }: { ctl: DocController }) {
     <div className={classes} ref={scrollRef} style={{ ["--z" as string]: String(z) }}>
       <div className="doc-canvas" style={{ width: paged ? canvasW : "100%", height: canvasH, minHeight: paged ? undefined : "100%" }} onMouseDown={onCanvasMouseDown}>
         {pages}
+        <div className="doc-note-measure" ref={measureRef} aria-hidden style={{ width: geo.pageW - geo.left - geo.right, ["--z" as string]: "1" }} />
         <div
           className="doc-host"
           style={hostStyle}
           ref={hostRef}
+          onMouseDown={() => {
+            // Clicking the text leaves the note being edited
+            if (ctl.noteEdit) ctl.closeNote();
+          }}
           onDoubleClick={() => {
             if (ctl.headerEdit) {
               ctl.headerEdit = null;

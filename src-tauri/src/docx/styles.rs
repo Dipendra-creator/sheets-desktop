@@ -472,6 +472,18 @@ pub static CATALOG: &[BuiltinStyle] = &[
         "<w:sz w:val=\"20\"/><w:szCs w:val=\"20\"/>",
     ),
     st("FootnoteReference", "footnote reference", "character", Some("DefaultParagraphFont"), None, Some(99), false, "", "<w:vertAlign w:val=\"superscript\"/>"),
+    st(
+        "EndnoteText",
+        "endnote text",
+        "paragraph",
+        Some("Normal"),
+        None,
+        Some(99),
+        false,
+        "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        "<w:sz w:val=\"20\"/><w:szCs w:val=\"20\"/>",
+    ),
+    st("EndnoteReference", "endnote reference", "character", Some("DefaultParagraphFont"), None, Some(99), false, "", "<w:vertAlign w:val=\"superscript\"/>"),
     BuiltinStyle {
         id: "TableGrid",
         name: "Table Grid",

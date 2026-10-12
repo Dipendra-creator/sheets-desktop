@@ -53,22 +53,6 @@ pub fn read_settings(bytes: &[u8]) -> Value {
     })
 }
 
-/// Footnote / endnote texts by id (shown when hovering the reference).
-pub fn read_notes(bytes: &[u8], element: &str) -> Value {
-    let text = decode(bytes);
-    let Ok(doc) = parse(&text) else { return json!({}) };
-    let mut map = Map::new();
-    for n in doc.root_element().children().filter(|c| is_w(*c, element)) {
-        if matches!(wattr(n, "type"), Some("separator") | Some("continuationSeparator") | Some("continuationNotice")) {
-            continue;
-        }
-        if let Some(id) = wattr(n, "id") {
-            map.insert(id.to_string(), json!(plain_text(n)));
-        }
-    }
-    Value::Object(map)
-}
-
 /// Comments by id: author, initials, date and text.
 pub fn read_comments(bytes: &[u8]) -> Value {
     let text = decode(bytes);

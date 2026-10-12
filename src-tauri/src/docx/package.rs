@@ -31,6 +31,8 @@ pub const CT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordp
 pub const CT_NUMBERING: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
 pub const CT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
 pub const CT_COMMENTS: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
+pub const CT_FOOTNOTES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footnotes+xml";
+pub const CT_ENDNOTES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.endnotes+xml";
 pub const CT_CORE: &str = "application/vnd.openxmlformats-package.core-properties+xml";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,6 +85,12 @@ impl Rels {
         };
         self.items.push(Rel { id: id.clone(), kind: kind.into(), target: target.into(), external });
         id
+    }
+
+    /// Adds a relationship with a given id (one the editor chose).
+    pub fn insert(&mut self, id: &str, kind: &str, target: &str, external: bool) {
+        self.items.retain(|r| r.id != id);
+        self.items.push(Rel { id: id.into(), kind: kind.into(), target: target.into(), external });
     }
 
     /// Id of an existing relationship to `target`, or a new one.

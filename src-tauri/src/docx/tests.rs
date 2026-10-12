@@ -105,7 +105,7 @@ fn resave(bytes: &[u8]) -> (Value, Vec<u8>) {
     let footers = opened.payload["footers"].clone();
     let out = save(
         &opened.state,
-        &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({ "words": 10 }), author: "Tester", core: None, comments: None },
+        &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({ "words": 10 }), author: "Tester", core: None, comments: None, footnotes: None, endnotes: None, stories: None },
     )
     .unwrap();
     (opened.payload, out)
@@ -268,7 +268,7 @@ fn edits_are_written() {
     let footers = json!({ "default": { "type": "doc", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "Page footer" } ] } ] } });
     doc["attrs"]["page"]["pgSz"] = json!({ "w": "16838", "h": "11906", "orient": "landscape" });
     let headers = opened.payload["headers"].clone();
-    let out = save(&opened.state, &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({}), author: "T", core: None, comments: None }).unwrap();
+    let out = save(&opened.state, &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({}), author: "T", core: None, comments: None, footnotes: None, endnotes: None, stories: None }).unwrap();
     let pkg = Package::read(&out).unwrap();
     let styles = pkg.text("word/styles.xml").unwrap();
     assert!(styles.contains("w:styleId=\"Heading4\""));
@@ -299,7 +299,7 @@ fn new_pictures_and_unbalanced_fields() {
     doc["content"].as_array_mut().unwrap().push(json!({ "type": "paragraph", "content": [
         { "type": "image", "attrs": { "target": "word/media/image9.png", "cx": 100000, "cy": 100000, "alt": "new" } }
     ] }));
-    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None }).unwrap();
+    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None, footnotes: None, endnotes: None, stories: None }).unwrap();
     let pkg = Package::read(&out).unwrap();
     assert!(pkg.get("word/media/image9.png").is_some());
     let rels = pkg.text("word/_rels/document.xml.rels").unwrap();
@@ -342,6 +342,98 @@ fn fallback_pictures() {
 }
 
 #[test]
+fn notes_are_written() {
+    // A document without footnotes gets a footnote; then it is edited and another one deleted
+    let bytes = sample_docx();
+    let opened = open(&bytes).unwrap();
+    let mut doc = opened.payload["doc"].clone();
+    let reference = |id: &str| {
+        json!({ "type": "opaque_inline", "attrs": { "kind": "footnote", "noteId": id, "label": "footnote", "hidden": false, "text": "",
+            "xml": format!("<w:r><w:rPr><w:rStyle w:val=\"FootnoteReference\"/></w:rPr><w:footnoteReference w:id=\"{id}\"/></w:r>") } })
+    };
+    let note = |text: &str| {
+        json!({ "type": "doc", "content": [{ "type": "paragraph", "attrs": { "style": "FootnoteText" }, "content": [
+            { "type": "opaque_inline", "attrs": { "kind": "noteRef", "label": "footnote", "hidden": false, "text": "",
+                "xml": "<w:r><w:rPr><w:rStyle w:val=\"FootnoteReference\"/></w:rPr><w:footnoteRef/></w:r>" } },
+            { "type": "text", "text": text }
+        ] }] })
+    };
+    doc["content"][0]["content"].as_array_mut().unwrap().push(reference("1"));
+    doc["content"][0]["content"].as_array_mut().unwrap().push(reference("2"));
+    let notes = json!({ "1": note(" First note"), "2": note(" Second note") });
+    let input = |doc: &Value, notes: &Value| {
+        save(
+            &opened.state,
+            &SaveInput { doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None, footnotes: Some(notes), endnotes: None, stories: None },
+        )
+        .unwrap()
+    };
+    let saved = input(&doc, &notes);
+    let pkg = Package::read(&saved).unwrap();
+    let xml = pkg.text("word/footnotes.xml").unwrap();
+    assert!(xml.contains("w:type=\"separator\"") && xml.contains("w:type=\"continuationSeparator\""));
+    assert!(xml.contains("First note") && xml.contains("Second note") && xml.contains("<w:footnoteRef/>"));
+    assert!(pkg.text("word/_rels/document.xml.rels").unwrap().contains("relationships/footnotes"));
+    assert!(pkg.text("[Content_Types].xml").unwrap().contains("footnotes+xml"));
+    assert!(pkg.text("word/settings.xml").unwrap().contains("<w:footnotePr><w:footnote w:id=\"-1\"/>"));
+    assert!(pkg.text("word/styles.xml").unwrap().contains("w:styleId=\"FootnoteText\""));
+
+    // Reopened: the notes come back as content
+    let again = open(&saved).unwrap();
+    let first = &again.payload["footnotes"]["1"];
+    assert_eq!(first["content"][0]["content"][0]["attrs"]["kind"], "noteRef");
+    assert_eq!(first["content"][0]["content"][1]["text"], " First note");
+    assert!(find(&again.payload["doc"], &|n| n["attrs"]["kind"] == "footnote" && n["attrs"]["noteId"] == "2").is_some());
+
+    // Edit one, delete the other: the rest of the part is kept as it was
+    let edits = json!({ "1": note(" Changed"), "2": null });
+    let saved2 = save(
+        &again.state,
+        &SaveInput { doc: &again.payload["doc"], headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None, footnotes: Some(&edits), endnotes: None, stories: None },
+    )
+    .unwrap();
+    let xml2 = Package::read(&saved2).unwrap().text("word/footnotes.xml").unwrap();
+    assert!(xml2.contains("Changed") && !xml2.contains("Second note") && !xml2.contains("First note"));
+    assert_eq!(xml2.matches("w:type=\"separator\"").count(), 1);
+}
+
+#[test]
+fn section_headers_are_written() {
+    // A section break whose section gets its own new header in the editor
+    let bytes = sample_docx();
+    let opened = open(&bytes).unwrap();
+    let mut doc = opened.payload["doc"].clone();
+    doc["content"][0]["attrs"]["sect"] = json!(
+        "<w:sectPr><w:headerReference w:type=\"default\" r:id=\"rIdDocsH1\"/><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:type w:val=\"nextPage\"/></w:sectPr>"
+    );
+    let stories = json!({ "rIdDocsH1": { "kind": "header", "content": [{ "type": "paragraph", "content": [{ "type": "text", "text": "Chapter one" }] }] } });
+    let saved = save(
+        &opened.state,
+        &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None, footnotes: None, endnotes: None, stories: Some(&stories) },
+    )
+    .unwrap();
+    let pkg = Package::read(&saved).unwrap();
+    let rels = pkg.text("word/_rels/document.xml.rels").unwrap();
+    let target = regex_like(&rels, "rIdDocsH1");
+    let part = format!("word/{target}");
+    assert!(pkg.text(&part).unwrap().contains("Chapter one"), "{part}");
+    assert!(pkg.text("[Content_Types].xml").unwrap().contains(&format!("/{part}")));
+    // Reopened: the section's header comes back by its id
+    let again = open(&saved).unwrap();
+    assert_eq!(again.payload["stories"]["rIdDocsH1"]["content"][0]["content"][0]["text"], "Chapter one");
+    // The final section's header is untouched
+    assert!(Package::read(&saved).unwrap().text("word/header1.xml").unwrap().contains("Confidential"));
+}
+
+/// Target of a relationship id in a .rels part (test helper).
+fn regex_like(rels: &str, id: &str) -> String {
+    let at = rels.find(&format!("Id=\"{id}\"")).expect("relationship");
+    let rest = &rels[at..];
+    let t = rest.find("Target=\"").unwrap() + 8;
+    rest[t..t + rest[t..].find('"').unwrap()].to_string()
+}
+
+#[test]
 fn blank_document() {
     let opened = super::blank();
     assert_eq!(opened.payload["doc"]["content"].as_array().unwrap().len(), 1);
@@ -351,7 +443,7 @@ fn blank_document() {
     let doc = json!({ "type": "doc", "attrs": opened.payload["doc"]["attrs"].clone(), "content": [
         { "type": "paragraph", "attrs": { "style": "Title" }, "content": [ { "type": "text", "text": "Hello" } ] }
     ] });
-    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None }).unwrap();
+    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None, footnotes: None, endnotes: None, stories: None }).unwrap();
     let reopened = open(&out).unwrap();
     assert_eq!(reopened.payload["doc"]["content"][0]["content"][0]["text"], "Hello");
 }

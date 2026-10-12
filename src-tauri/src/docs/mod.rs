@@ -154,8 +154,8 @@ impl DocSession {
             if let Some(v) = s.get("doc").filter(|v| !v.is_null()) {
                 p["doc"] = v.clone();
             }
-            // Headers and footers come back one by one (only the edited ones)
-            for key in ["headers", "footers"] {
+            // Headers, footers and notes come back one by one (only the edited ones)
+            for key in ["headers", "footers", "footnotes", "endnotes", "stories"] {
                 let Some(over) = s.get(key).and_then(|v| v.as_object()) else { continue };
                 if !p[key].is_object() {
                     p[key] = json!({});
@@ -186,6 +186,9 @@ impl DocSession {
                 author,
                 core: snapshot.and_then(|s| s.get("core")).filter(|c| c.is_object()),
                 comments: snapshot.and_then(|s| s.get("comments")).filter(|c| c.is_object()),
+                footnotes: snapshot.and_then(|s| s.get("footnotes")).filter(|c| c.is_object()),
+                endnotes: snapshot.and_then(|s| s.get("endnotes")).filter(|c| c.is_object()),
+                stories: snapshot.and_then(|s| s.get("stories")).filter(|c| c.is_object()),
             },
         )
         .map_err(AppError::Io)

@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Map, Value};
 
 use package::{
-    rels_name, resolve, Package, CT_COMMENTS, CT_CORE, CT_DOCUMENT, CT_FOOTER, CT_HEADER, CT_MACRO_DOCUMENT, CT_MACRO_TEMPLATE, CT_NUMBERING,
+    rels_name, resolve, Package, CT_COMMENTS, CT_CORE, CT_DOCUMENT, CT_ENDNOTES, CT_FOOTER, CT_FOOTNOTES, CT_HEADER, CT_MACRO_DOCUMENT, CT_MACRO_TEMPLATE, CT_NUMBERING,
     CT_STYLES, CT_TEMPLATE, REL_APP, REL_COMMENTS, REL_CORE, REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_NUMBERING,
     REL_SETTINGS, REL_STYLES, REL_THEME,
 };
@@ -131,6 +131,53 @@ fn part_by_rel(pkg: &Package, main: &str, kind: &str) -> Option<String> {
     pkg.rels_of(main).items.iter().find(|r| r.kind == kind && !r.external).map(|r| resolve(main, &r.target))
 }
 
+/// Relationship type, content type and part name of footnotes or endnotes.
+fn notes_part_info(kind: &str) -> (&'static str, &'static str, &'static str) {
+    if kind == "footnote" {
+        (REL_FOOTNOTES, CT_FOOTNOTES, "footnotes.xml")
+    } else {
+        (REL_ENDNOTES, CT_ENDNOTES, "endnotes.xml")
+    }
+}
+
+/// Separators and continuation notices: notes Word draws itself.
+fn is_special_note(n: roxmltree::Node) -> bool {
+    matches!(wattr(n, "type"), Some("separator") | Some("continuationSeparator") | Some("continuationNotice"))
+}
+
+/// Footnotes or endnotes by id, as editor documents.
+fn read_notes(
+    pkg: &Package,
+    main: &str,
+    kind: &str,
+    sdts: &mut Map<String, Value>,
+    next_sdt: &mut usize,
+    warnings: &mut Vec<String>,
+) -> Value {
+    let (rel, _, _) = notes_part_info(kind);
+    let Some(part) = part_by_rel(pkg, main, rel) else { return json!({}) };
+    let Some(text) = pkg.text(&part) else { return json!({}) };
+    let Ok(doc) = parse(&text) else {
+        warnings.push(format!("The {kind}s couldn't be read and are kept as they are."));
+        return json!({});
+    };
+    let rels = pkg.rels_of(&part);
+    let mut map = Map::new();
+    for n in doc.root_element().children().filter(|c| is_w(*c, kind) && !is_special_note(*c)) {
+        let Some(id) = wattr(n, "id") else { continue };
+        let mut content = Vec::new();
+        {
+            let mut ctx = Ctx::new(&text, &part, &rels, sdts, next_sdt);
+            ctx.blocks(n, None, &mut content);
+        }
+        if content.is_empty() {
+            content.push(json!({ "type": "paragraph" }));
+        }
+        map.insert(id.to_string(), json!({ "type": "doc", "content": content }));
+    }
+    Value::Object(map)
+}
+
 /// Opens a .docx/.docm/.dotx/.dotm package.
 pub fn open(bytes: &[u8]) -> Result<Opened, String> {
     let pkg = Package::read(bytes)?;
@@ -199,14 +246,43 @@ pub fn open(bytes: &[u8]) -> Result<Opened, String> {
         hf.push(HfRef { kind, ty, part, rid });
     }
 
+    // Headers and footers of the other sections, by relationship id
+    let mut stories = Map::new();
+    let final_rids: BTreeSet<String> = hf.iter().map(|r| r.rid.clone()).collect();
+    for block in &blocks {
+        let Some(raw) = block.get("attrs").and_then(|a| a.get("sect")).and_then(|v| v.as_str()) else { continue };
+        let (_, _, refs) = sect_info(&root_start, Some(raw));
+        for (kind, _, rid) in refs {
+            if final_rids.contains(&rid) || stories.contains_key(&rid) {
+                continue;
+            }
+            let Some(rel) = rels.get(&rid) else { continue };
+            let part = resolve(&main, &rel.target);
+            let Some(text) = pkg.text(&part) else { continue };
+            let Ok(doc) = parse(&text) else { continue };
+            let hroot = doc.root_element();
+            let part_rels = pkg.rels_of(&part);
+            let mut content = Vec::new();
+            {
+                let mut ctx = Ctx::new(&text, &part, &part_rels, &mut sdts, &mut next_sdt);
+                ctx.blocks(hroot, None, &mut content);
+            }
+            if content.is_empty() {
+                content.push(json!({ "type": "paragraph" }));
+            }
+            hf_roots.insert(part.clone(), start_tag(&text, hroot));
+            stories.insert(rid, json!({ "kind": kind, "content": content }));
+        }
+    }
+
     let read_part = |kind: &str| part_by_rel(&pkg, &main, kind).and_then(|p| pkg.get(&p).map(|b| b.to_vec()));
     let mut styles = read_part(REL_STYLES).map(|b| styles::read_styles(&b)).unwrap_or_else(|| json!({ "defaults": {}, "styles": [] }));
     merge_catalog(&mut styles);
     let numbering = read_part(REL_NUMBERING).map(|b| numbering::read_numbering(&b)).unwrap_or_else(|| json!({ "abstracts": {}, "nums": {} }));
     let theme = read_part(REL_THEME).map(|b| parts::read_theme(&b)).unwrap_or_else(|| json!({}));
     let settings = read_part(REL_SETTINGS).map(|b| parts::read_settings(&b)).unwrap_or_else(|| json!({ "defaultTabStop": 720 }));
-    let footnotes = read_part(REL_FOOTNOTES).map(|b| parts::read_notes(&b, "footnote")).unwrap_or_else(|| json!({}));
-    let endnotes = read_part(REL_ENDNOTES).map(|b| parts::read_notes(&b, "endnote")).unwrap_or_else(|| json!({}));
+    let footnotes = read_notes(&pkg, &main, "footnote", &mut sdts, &mut next_sdt, &mut warnings);
+    let endnotes = read_notes(&pkg, &main, "endnote", &mut sdts, &mut next_sdt, &mut warnings);
     let comments = read_part(REL_COMMENTS).map(|b| parts::read_comments(&b)).unwrap_or_else(|| json!({}));
     let core = pkg
         .rels_of("")
@@ -227,6 +303,7 @@ pub fn open(bytes: &[u8]) -> Result<Opened, String> {
         "doc": doc,
         "headers": headers,
         "footers": footers,
+        "stories": stories,
         "styles": styles,
         "numbering": numbering,
         "theme": theme,
@@ -397,6 +474,12 @@ pub struct SaveInput<'a> {
     pub core: Option<&'a Value>,
     /// Comments added or edited in the app (null: deleted), by id.
     pub comments: Option<&'a Value>,
+    /// Footnotes / endnotes added or edited in the app (null: deleted), by id.
+    pub footnotes: Option<&'a Value>,
+    pub endnotes: Option<&'a Value>,
+    /// Headers and footers of the other sections edited in the app, by
+    /// relationship id: `{kind, content}` (new ids get a new part).
+    pub stories: Option<&'a Value>,
 }
 
 fn scan_doc_pr_ids(text: &str, ids: &mut DocPrIds) {
@@ -436,6 +519,12 @@ pub fn save(state: &DocState, input: &SaveInput) -> Result<Vec<u8>, String> {
                         set.insert(r.part.clone());
                     }
                 }
+            }
+        }
+        let main_rels = pkg.rels_of(&main);
+        for rid in input.stories.and_then(|v| v.as_object()).map(|o| o.keys().cloned().collect::<Vec<_>>()).unwrap_or_default() {
+            if let Some(r) = main_rels.get(&rid).filter(|r| !r.external) {
+                set.insert(resolve(&main, &r.target));
             }
         }
         set
@@ -512,6 +601,42 @@ pub fn save(state: &DocState, input: &SaveInput) -> Result<Vec<u8>, String> {
             refs.push((r.kind.clone(), r.ty.clone(), r.rid.clone()));
         }
     }
+
+    // Headers and footers of the other sections
+    for (rid, story) in input.stories.and_then(|v| v.as_object()).map(|o| o.iter().collect::<Vec<_>>()).unwrap_or_default() {
+        let kind = if story.get("kind").and_then(|k| k.as_str()) == Some("footer") { "footer" } else { "header" };
+        let content = story.get("content").and_then(|c| c.as_array()).cloned().unwrap_or_default();
+        let existing = main_rels.get(rid).filter(|r| !r.external).map(|r| resolve(&main, &r.target));
+        let (part, root) = match existing {
+            Some(p) => {
+                let root = state.hf_roots.get(&p).cloned().unwrap_or_else(|| default_hf_root(kind));
+                (p, root)
+            }
+            None => {
+                let part = pkg.free_name("word", kind, "xml");
+                let target = package::relative(&main, &part);
+                main_rels.insert(rid, if kind == "header" { REL_HEADER } else { REL_FOOTER }, &target, false);
+                ct.set_override(&part, if kind == "header" { CT_HEADER } else { CT_FOOTER });
+                (part, default_hf_root(kind))
+            }
+        };
+        let rels = pkg.rels_of(&part);
+        let (xml_body, rels) = {
+            let mut w = PartWriter::new(&part, rels, &mut pkg, &mut ct, &state.sdts, &state.media, &mut used_styles, &mut doc_pr, text_width);
+            let mut b = w.blocks(&content, true);
+            let tail = w.close_open_fields();
+            if !tail.is_empty() {
+                b.push_str(&format!("<w:p>{tail}</w:p>"));
+            }
+            (b, w.rels)
+        };
+        let root = ensure_namespaces(&root, &xml_body);
+        let qn = qname(&root);
+        pkg.set(&part, format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n{root}{xml_body}</{qn}>"));
+        if !rels.items.is_empty() {
+            pkg.set(&rels_name(&part), rels.to_xml());
+        }
+    }
     // Keep the original order of reference types (headers first)
     refs.sort_by_key(|(k, t, _)| (k != "header", ["default", "first", "even"].iter().position(|x| x == t).unwrap_or(3)));
 
@@ -539,6 +664,62 @@ pub fn save(state: &DocState, input: &SaveInput) -> Result<Vec<u8>, String> {
         if edits.values().any(|v| !v.is_null()) {
             used_styles.insert("CommentText".to_string());
             used_styles.insert("CommentReference".to_string());
+        }
+    }
+
+    // Footnotes and endnotes added, edited or deleted in the app
+    for (kind, edits) in [("footnote", input.footnotes), ("endnote", input.endnotes)] {
+        let Some(edits) = edits.and_then(|e| e.as_object()).filter(|e| !e.is_empty()) else { continue };
+        let (rel, ctype, file) = notes_part_info(kind);
+        let existing = part_by_rel(&pkg, &main, rel);
+        let part = existing.clone().unwrap_or_else(|| format!("word/{file}"));
+        let original = existing.as_ref().and_then(|p| pkg.text(p));
+        let Some((root, items)) = note_items(original.as_deref(), kind) else { continue };
+        let rels = pkg.rels_of(&part);
+        let (items, rels) = {
+            let mut w = PartWriter::new(&part, rels, &mut pkg, &mut ct, &state.sdts, &state.media, &mut used_styles, &mut doc_pr, text_width);
+            let mut items = items;
+            for (id, value) in edits {
+                let written = value.get("content").and_then(|c| c.as_array()).map(|content| {
+                    let mut body = w.blocks(content, true);
+                    let tail = w.close_open_fields();
+                    if !tail.is_empty() {
+                        body.push_str(&format!("<w:p>{tail}</w:p>"));
+                    }
+                    format!("<w:{kind} w:id=\"{}\">{body}</w:{kind}>", xml::esc(id))
+                });
+                match (items.iter().position(|(i, _)| i.as_deref() == Some(id.as_str())), written) {
+                    (Some(at), Some(xml)) => items[at].1 = xml,
+                    (Some(at), None) => {
+                        items.remove(at);
+                    }
+                    (None, Some(xml)) => items.push((Some(id.clone()), xml)),
+                    (None, None) => {}
+                }
+            }
+            (items, w.rels)
+        };
+        let body: String = items.into_iter().map(|(_, x)| x).collect();
+        let root = ensure_namespaces(&root, &body);
+        let qn = qname(&root);
+        pkg.set(&part, format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n{root}{body}</{qn}>"));
+        if !rels.items.is_empty() {
+            pkg.set(&rels_name(&part), rels.to_xml());
+        }
+        if existing.is_none() {
+            main_rels.ensure(rel, file, false);
+            ct.set_override(&part, ctype);
+            // Word lists the separator notes in the settings
+            if let Some(sp) = part_by_rel(&pkg, &main, REL_SETTINGS) {
+                if let Some(updated) = pkg.text(&sp).and_then(|t| add_note_pr(&t, kind)) {
+                    pkg.set(&sp, updated);
+                }
+            }
+        }
+        if edits.values().any(|v| !v.is_null()) {
+            let (text_style, ref_style) = if kind == "footnote" { ("FootnoteText", "FootnoteReference") } else { ("EndnoteText", "EndnoteReference") };
+            used_styles.insert(text_style.to_string());
+            used_styles.insert(ref_style.to_string());
         }
     }
 
@@ -646,6 +827,63 @@ pub fn save(state: &DocState, input: &SaveInput) -> Result<Vec<u8>, String> {
 
     pkg.set("[Content_Types].xml", ct.to_xml());
     pkg.write()
+}
+
+/// The root start tag and children (note id, raw XML) of a notes part; a
+/// new part has the separator notes Word expects.
+#[allow(clippy::type_complexity)]
+fn note_items(original: Option<&str>, kind: &str) -> Option<(String, Vec<(Option<String>, String)>)> {
+    match original {
+        Some(text) => {
+            let doc = parse(text).ok()?;
+            let root = doc.root_element();
+            let items = root
+                .children()
+                .filter(|c| c.is_element())
+                .map(|c| {
+                    let id = (is_w(c, kind) && !is_special_note(c)).then(|| wattr(c, "id").map(String::from)).flatten();
+                    (id, text[c.range()].to_string())
+                })
+                .collect();
+            Some((start_tag(text, root), items))
+        }
+        None => {
+            let root = format!(
+                "<w:{kind}s xmlns:w=\"{}\" xmlns:r=\"{}\" xmlns:wp=\"{}\" xmlns:mc=\"{}\" xmlns:w14=\"http://schemas.microsoft.com/office/word/2010/wordml\" mc:Ignorable=\"w14\">",
+                xml::W,
+                xml::R,
+                xml::WP,
+                xml::MC
+            );
+            let note = |id: &str, ty: &str, mark: &str| {
+                format!("<w:{kind} w:type=\"{ty}\" w:id=\"{id}\"><w:p><w:pPr><w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/></w:pPr><w:r><w:{mark}/></w:r></w:p></w:{kind}>")
+            };
+            Some((root, vec![(None, note("-1", "separator", "separator")), (None, note("0", "continuationSeparator", "continuationSeparator"))]))
+        }
+    }
+}
+
+/// Lists the separator notes in `settings.xml` (`w:footnotePr` / `w:endnotePr`).
+fn add_note_pr(text: &str, kind: &str) -> Option<String> {
+    let doc = parse(text).ok()?;
+    let root = doc.root_element();
+    let name = format!("{kind}Pr");
+    if root.children().any(|c| is_w(c, &name)) {
+        return None;
+    }
+    // CT_Settings order: the first element that comes after it
+    let after: &[&str] = if kind == "footnote" {
+        &["endnotePr", "compat", "docVars", "rsids", "mathPr", "attachedSchema", "themeFontLang", "clrSchemeMapping", "doNotIncludeSubdocsInStats", "doNotAutoCompressPictures", "forceUpgrade", "captions", "readModeInkLockDown", "smartTagType", "schemaLibrary", "shapeDefaults", "doNotEmbedSmartTags", "decimalSymbol", "listSeparator"]
+    } else {
+        &["compat", "docVars", "rsids", "mathPr", "attachedSchema", "themeFontLang", "clrSchemeMapping", "doNotIncludeSubdocsInStats", "doNotAutoCompressPictures", "forceUpgrade", "captions", "readModeInkLockDown", "smartTagType", "schemaLibrary", "shapeDefaults", "doNotEmbedSmartTags", "decimalSymbol", "listSeparator"]
+    };
+    let anchor = root
+        .children()
+        .find(|c| after.iter().any(|n| is_w(*c, n)))
+        .map(|n| n.range().start)
+        .unwrap_or_else(|| text[..root.range().end].rfind("</").unwrap_or(root.range().end));
+    let el = format!("<w:{name}><w:{kind} w:id=\"-1\"/><w:{kind} w:id=\"0\"/></w:{name}>");
+    Some(format!("{}{el}{}", &text[..anchor], &text[anchor..]))
 }
 
 fn default_hf_root(kind: &str) -> String {

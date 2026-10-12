@@ -49,12 +49,15 @@ import { formattingKey, formattingPlugin } from "./formatting";
 import { ImageView } from "./imageview";
 import { autoFormatRules, wordKeymap } from "./keymap";
 import { BULLET_FORMATS, findFormat, Lists, NUMBER_FORMATS, type ListFormat } from "./lists";
-import { geometryOf, paginationPlugin, paginators, type PageInfo } from "./pagination";
+import { NOTE_KINDS, newNote, noteReference, noteText, referencedNotes, renderNote, type NoteKind } from "./notes";
+import { geometryOf, NO_NOTES, paginationPlugin, paginators, type HfType, type NoteLayout, type PageInfo } from "./pagination";
+import { addStoryRef, pageFacts, resolveStory, sectionsOf, type PageFacts, type SectionInfo, type StoryKind } from "./sections";
 import { DocTableView } from "./tableview";
 import { TabView, tabLayouts, tabsPlugin } from "./tabs";
 import { nextChange, resolveChanges, trackedDelete, trackedPaste, trackedTextInput, type Reviewer } from "./track";
 import { countWords, type WordStats } from "./wordcount";
 import { prepareHtml, prepareSlice, uploadPendingImages } from "./clipboard";
+import { clipboardSerializer } from "./serializer";
 import { generateToc, updateFields } from "./fields";
 
 type Attrs = Record<string, unknown>;
@@ -81,6 +84,10 @@ export interface HeaderFooterEdit {
   kind: "header" | "footer";
   type: "default" | "first" | "even";
   page: number;
+  /** The story being edited ("final:default", a section's relationship id, or null for a new one). */
+  ref: string | null;
+  /** The section that owns it (or gets the new one). */
+  section: number;
 }
 
 const SIZES = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72];
@@ -94,7 +101,7 @@ export class DocController {
   state: EditorState;
   headers: Record<string, PMNode | null> = {};
   footers: Record<string, PMNode | null> = {};
-  /** Headers/footers changed since opening (sent with the next save). */
+  /** Headers/footers changed since opening (sent with every save). */
   hfChanged = new Set<string>();
   coreEdits: Record<string, string> = {};
 
@@ -124,10 +131,32 @@ export class DocController {
   readonly dirtyAtOpen: boolean;
   /** Comments pane (Review > Show Comments). */
   commentsPane = false;
-  /** Comments added, edited or deleted (null) since the last save. */
+  /** Comments added, edited or deleted (null) since opening. */
   commentEdits: Record<string, { author: string; initials: string; date: string; text: string } | null> = {};
   /** The comment being edited in the pane. */
   editingComment: string | null = null;
+  /** Footnotes and endnotes by id. */
+  notes: Record<NoteKind, Record<string, PMNode>> = { footnote: {}, endnote: {} };
+  /** Notes changed since opening ("footnote:3"), sent with every save. */
+  notesChanged = new Set<string>();
+  /** The note being edited at the bottom of its page. */
+  noteEdit: { kind: NoteKind; id: string } | null = null;
+  /** Where the pages' footnotes and the endnotes are drawn. */
+  noteLayout: NoteLayout = NO_NOTES;
+  /** Heights of headers and footers as drawn ("header:first"), unzoomed px. */
+  hfHeights: Record<string, number> = {};
+  /** Headers and footers of the other sections, by relationship id. */
+  stories: Record<string, PMNode> = {};
+  storyKinds: Record<string, StoryKind> = {};
+  /** Section stories changed since opening, sent with every save. */
+  storiesChanged = new Set<string>();
+  private sectionsCache: { doc: PMNode; tick: number; list: SectionInfo[] } | null = null;
+  /** Bumped whenever a header or footer changes (redraws the pages). */
+  hfTick = 0;
+  /** Hidden box the page area gives for measuring notes (text width, 100%). */
+  measureHost: HTMLElement | null = null;
+  private noteHeights = new WeakMap<PMNode, number>();
+  private measuredWidth = 0;
 
   private listeners = new Set<() => void>();
   private updateTimer = 0;
@@ -158,6 +187,14 @@ export class DocController {
     this.reviewer = { enabled: () => this.trackChanges, author: () => this.host.author() || "Author" };
     for (const [k, v] of Object.entries(payload.headers ?? {})) this.headers[k] = v ? docFromJSON(v) : null;
     for (const [k, v] of Object.entries(payload.footers ?? {})) this.footers[k] = v ? docFromJSON(v) : null;
+    for (const kind of NOTE_KINDS) {
+      for (const [id, v] of Object.entries((kind === "footnote" ? payload.footnotes : payload.endnotes) ?? {})) if (v) this.notes[kind][id] = docFromJSON(v);
+    }
+    for (const [rid, v] of Object.entries(payload.stories ?? {})) {
+      if (!v) continue;
+      this.stories[rid] = docFromJSON({ type: "doc", content: v.content });
+      this.storyKinds[rid] = v.kind;
+    }
     this.state = EditorState.create({ doc: docFromJSON(payload.doc), plugins: this.plugins() });
     this.format = this.computeFormat(this.state);
     try {
@@ -216,9 +253,17 @@ export class DocController {
       tableEditing({ allowTableNodeSelection: true }),
       dropCursor({ color: "#2b579a", width: 2 }),
       gapCursor(),
-      formattingPlugin({ sheet, numbering: this.payload.numbering }),
+      formattingPlugin({ sheet, numbering: this.payload.numbering, noteText: (kind, id) => noteText(this.notes[kind][id]) }),
       tabsPlugin({ sheet, defaultTab: Number(settings.defaultTabStop ?? 720) || 720 }),
-      paginationPlugin({ sheet, enabled: () => this.viewMode === "print" || this.viewMode === "read" }, (pages) => this.setPages(pages)),
+      paginationPlugin(
+        {
+          sheet,
+          enabled: () => this.viewMode === "print" || this.viewMode === "read",
+          band: (page, section, first) => this.pageBand(page, section, first),
+          noteHeight: (kind, id) => this.noteHeight(kind, id),
+        },
+        (pages, notes) => this.setPages(pages, notes),
+      ),
       findPlugin(),
       new Plugin({
         props: {
@@ -232,6 +277,13 @@ export class DocController {
           handlePaste: (view, event, slice) => this.handlePaste(view, event, slice),
           handleDrop: (view, event) => this.handleDrop(view, event),
           handleClick: (view, pos, event) => this.handleClick(view, pos, event),
+          handleDoubleClickOn: (_view, _pos, node) => {
+            // Double-clicking a footnote mark goes to the note, like Word
+            const kind = node.attrs.kind as string;
+            if (node.type.name !== "opaque_inline" || (kind !== "footnote" && kind !== "endnote")) return false;
+            this.openNote(kind, String(node.attrs.noteId));
+            return true;
+          },
           handleDOMEvents: {
             mouseup: () => {
               if (this.painter) this.paint();
@@ -254,6 +306,7 @@ export class DocController {
         tab: (node) => new TabView(node),
         image: (node, view, getPos) => new ImageView(node, view, getPos as () => number | undefined),
       },
+      clipboardSerializer,
       clipboardTextSerializer: (slice) => slice.content.textBetween(0, slice.content.size, "\n\n", (leaf) => (leaf.type.name === "tab" ? "\t" : leaf.type.name === "hard_break" ? "\n" : "")),
     });
   }
@@ -343,6 +396,7 @@ export class DocController {
   headerChanged(kind: "header" | "footer", type: string, doc: PMNode | null) {
     (kind === "header" ? this.headers : this.footers)[type] = doc;
     this.hfChanged.add(`${kind}:${type}`);
+    this.hfTick++;
     this.onDocChanged(this.state.tr);
     paginators.get(this.view!)?.invalidate();
     this.emit();
@@ -380,6 +434,31 @@ export class DocController {
       stats: { pages: this.pages.length, words: s.words, chars: s.chars, charsWithSpaces: s.charsWithSpaces, paragraphs: s.paragraphs, lines: s.lines },
       core: Object.keys(this.coreEdits).length ? this.coreEdits : undefined,
       comments: Object.keys(this.commentEdits).length ? this.commentEdits : undefined,
+      ...this.noteEdits(),
+      stories: this.storiesChanged.size
+        ? Object.fromEntries([...this.storiesChanged].map((rid) => [rid, { kind: this.storyKinds[rid] ?? "header", content: this.stories[rid]?.toJSON().content ?? [] }]))
+        : undefined,
+    };
+  }
+
+  /** Notes added or edited, and notes whose reference was deleted (null). */
+  private noteEdits(): { footnotes?: Record<string, unknown>; endnotes?: Record<string, unknown> } {
+    const referenced = referencedNotes(this.state.doc);
+    const out: Record<NoteKind, Record<string, unknown>> = { footnote: {}, endnote: {} };
+    for (const kind of NOTE_KINDS) {
+      const refs = new Set(referenced[kind]);
+      for (const key of this.notesChanged) {
+        const [k, id] = key.split(":");
+        if (k !== kind) continue;
+        const doc = this.notes[kind][id];
+        out[kind][id] = doc && refs.has(id) ? doc.toJSON() : null;
+      }
+      const opened = (kind === "footnote" ? this.payload.footnotes : this.payload.endnotes) ?? {};
+      for (const id of Object.keys(opened)) if (!refs.has(id) && opened[id]) out[kind][id] = null;
+    }
+    return {
+      footnotes: Object.keys(out.footnote).length ? out.footnote : undefined,
+      endnotes: Object.keys(out.endnote).length ? out.endnote : undefined,
     };
   }
 
@@ -424,10 +503,8 @@ export class DocController {
     try {
       window.clearTimeout(this.updateTimer);
       this.changedSinceUpdate = false;
+      // Edits stay listed: every save applies them to the file as opened
       const info = await docsApi.save(this.id, this.snapshot());
-      this.hfChanged.clear();
-      this.coreEdits = {};
-      this.commentEdits = {};
       this.setInfo(info);
       this.status = "Saved";
       return true;
@@ -451,9 +528,6 @@ export class DocController {
       window.clearTimeout(this.updateTimer);
       this.changedSinceUpdate = false;
       const info = await docsApi.saveAs(this.id, path, this.snapshot());
-      this.hfChanged.clear();
-      this.coreEdits = {};
-      this.commentEdits = {};
       this.setInfo(info);
       return true;
     } catch (e) {
@@ -483,11 +557,202 @@ export class DocController {
   // View state
   // ------------------------------------------------------------------
 
-  setPages(pages: PageInfo[]) {
+  setPages(pages: PageInfo[], notes: NoteLayout = NO_NOTES) {
     const same = pages.length === this.pages.length && pages.every((p, i) => p.from === this.pages[i].from);
-    if (same) return;
+    const sameNotes = notes === this.noteLayout || JSON.stringify(notes) === JSON.stringify(this.noteLayout);
+    if (same && sameNotes) return;
     this.pages = pages;
+    this.noteLayout = notes;
     this.emit();
+  }
+
+  // ------------------------------------------------------------------
+  // Page bands: headers, footers and notes
+  // ------------------------------------------------------------------
+
+  /** Top and bottom margins of a page's text: a taller header or footer pushes it, like Word. */
+  pageBand(page: number, section: number, firstOfSection: boolean): { top: number; bottom: number } {
+    const g = geometryOf(this.state.doc);
+    const sections = this.sections();
+    const sec = sections[Math.min(section, sections.length - 1)];
+    const type: HfType = firstOfSection && sec?.titlePg ? "first" : this.state.doc.attrs.evenOdd === true && (page + 1) % 2 === 0 ? "even" : "default";
+    const header = this.hfHeights[`header:${resolveStory(sections, section, "header", type).ref}`] ?? 0;
+    const footer = this.hfHeights[`footer:${resolveStory(sections, section, "footer", type).ref}`] ?? 0;
+    return { top: Math.max(g.top, g.header + header), bottom: Math.max(g.bottom, g.footer + footer) };
+  }
+
+  /** The document's sections (headers, footers, numbering of each). */
+  sections(): SectionInfo[] {
+    const c = this.sectionsCache;
+    if (c && c.doc === this.state.doc && c.tick === this.hfTick) return c.list;
+    const list = sectionsOf(this.state.doc, this.headers, this.footers);
+    this.sectionsCache = { doc: this.state.doc, tick: this.hfTick, list };
+    return list;
+  }
+
+  /** A header or footer by its reference ("final:first" or a section's relationship id). */
+  storyDoc(kind: StoryKind, ref: string | null): PMNode | null {
+    if (!ref) return null;
+    if (ref.startsWith("final:")) return (kind === "header" ? this.headers : this.footers)[ref.slice(6)] ?? null;
+    return this.stories[ref] ?? null;
+  }
+
+  /** A header or footer edited in place; a section without one gets its own. */
+  storyChanged(edit: HeaderFooterEdit, doc: PMNode) {
+    if (edit.ref?.startsWith("final:")) {
+      this.headerChanged(edit.kind, edit.ref.slice(6), doc);
+      return;
+    }
+    const sections = this.sections();
+    if (!edit.ref && edit.section >= sections.length - 1) {
+      // The last section's own new header or footer
+      edit.ref = `final:${edit.type}`;
+      this.headerChanged(edit.kind, edit.type, doc);
+      return;
+    }
+    if (!edit.ref) {
+      // A new one for this section: referenced from its section break
+      const sec = sections[edit.section];
+      const node = sec?.pos != null ? this.state.doc.nodeAt(sec.pos) : null;
+      if (!node || !this.view) return;
+      let n = 1;
+      while (this.stories[`rIdDocs${edit.kind === "header" ? "H" : "F"}${n}`]) n++;
+      const rid = `rIdDocs${edit.kind === "header" ? "H" : "F"}${n}`;
+      this.storyKinds[rid] = edit.kind;
+      this.stories[rid] = doc;
+      edit.ref = rid;
+      this.dispatch(this.state.tr.setNodeMarkup(sec.pos!, undefined, { ...node.attrs, sect: addStoryRef(String(node.attrs.sect), edit.kind, edit.type, rid) }));
+    }
+    this.stories[edit.ref] = doc;
+    this.storyKinds[edit.ref] ??= edit.kind;
+    this.storiesChanged.add(edit.ref);
+    this.hfTick++;
+    this.onDocChanged(this.state.tr);
+    if (this.view) paginators.get(this.view)?.invalidate();
+    this.emit();
+  }
+
+  /** Heights of the headers and footers as drawn; a change lays the pages out again. */
+  setHfHeights(heights: Record<string, number>) {
+    const keys = new Set([...Object.keys(heights), ...Object.keys(this.hfHeights)]);
+    let changed = false;
+    for (const k of keys) if (Math.abs((heights[k] ?? 0) - (this.hfHeights[k] ?? 0)) > 0.5) changed = true;
+    if (!changed) return;
+    this.hfHeights = { ...heights };
+    if (this.view) paginators.get(this.view)?.invalidate();
+  }
+
+  /** Height of a note as drawn at the bottom of a page (unzoomed px). */
+  noteHeight(kind: NoteKind, id: string): number {
+    const doc = this.notes[kind][id];
+    const host = this.measureHost;
+    if (!doc || !host || !host.isConnected) return 0;
+    // A new page width (or text styles) changes every height
+    if (host.clientWidth !== this.measuredWidth) {
+      this.noteHeights = new WeakMap();
+      this.measuredWidth = host.clientWidth;
+    }
+    const cached = this.noteHeights.get(doc);
+    if (cached != null) return cached;
+    const el = document.createElement("div");
+    el.className = "pm-doc note-body";
+    host.appendChild(el);
+    renderNote(el, doc, "8", this.sheet, Number(this.payload.settings?.defaultTabStop ?? 720) || 720);
+    const h = el.getBoundingClientRect().height;
+    el.remove();
+    this.noteHeights.set(doc, h);
+    return h;
+  }
+
+  /** The number of a note as shown (1, 2… / i, ii…), from its reference in the text. */
+  noteNumber(kind: NoteKind, id: string): number | null {
+    return formattingKey.getState(this.state)?.notes.get(`${kind}:${id}`) ?? null;
+  }
+
+  /** A note changed in its editor. */
+  noteChanged(kind: NoteKind, id: string, doc: PMNode) {
+    this.notes[kind][id] = doc;
+    this.notesChanged.add(`${kind}:${id}`);
+    this.onDocChanged(this.state.tr);
+    if (this.view) paginators.get(this.view)?.invalidate();
+    this.emit();
+  }
+
+  /** References > Insert Footnote / Insert Endnote: a numbered note, with the cursor in it. */
+  insertNote(kind: NoteKind) {
+    const view = this.view;
+    if (!view) return;
+    this.headerEdit = null;
+    this.noteEdit = null;
+    const used = new Set<number>();
+    for (const id of [...Object.keys(this.notes[kind]), ...Object.keys((kind === "footnote" ? this.payload.footnotes : this.payload.endnotes) ?? {}), ...referencedNotes(this.state.doc)[kind]]) {
+      const n = Number(id);
+      if (Number.isFinite(n)) used.add(n);
+    }
+    const id = String(Math.max(0, ...used) + 1);
+    this.notes[kind][id] = newNote(kind, this.sheet);
+    this.notesChanged.add(`${kind}:${id}`);
+    const at = view.state.selection.to;
+    this.dispatch(view.state.tr.insert(at, noteReference(kind, id)).scrollIntoView());
+    this.noteEdit = { kind, id };
+    this.emit();
+  }
+
+  /** Edits a note in place (double-clicking its reference, Show Notes). */
+  openNote(kind: NoteKind, id: string) {
+    if (!this.notes[kind][id]) return;
+    this.headerEdit = null;
+    this.noteEdit = { kind, id };
+    this.emit();
+  }
+
+  closeNote() {
+    if (!this.noteEdit) return;
+    this.noteEdit = null;
+    // Reference tooltips show the note's new text
+    if (this.view) this.view.dispatch(this.view.state.tr.setMeta(formattingKey, true).setMeta("addToHistory", false));
+    this.emit();
+    this.view?.focus();
+  }
+
+  /** References > Next Footnote: moves to the next (or previous) reference mark. */
+  nextNote(kind: NoteKind, dir: 1 | -1) {
+    const view = this.view;
+    if (!view) return;
+    this.closeNote();
+    const marks: number[] = [];
+    view.state.doc.descendants((node, pos) => {
+      if (node.type.name === "opaque_inline" && node.attrs.kind === kind) marks.push(pos);
+      return !node.isTextblock || node.childCount > 0;
+    });
+    const head = view.state.selection.head;
+    const target = dir > 0 ? marks.find((p) => p >= head) : [...marks].reverse().find((p) => p + 1 < head);
+    if (target == null) {
+      this.status = `No more ${kind}s`;
+      this.emit();
+      return;
+    }
+    this.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, target + 1)).scrollIntoView());
+    view.focus();
+  }
+
+  /** References > Show Notes: the notes of the reference at (or after) the cursor. */
+  showNotes() {
+    const referenced = referencedNotes(this.state.doc);
+    const head = this.state.selection.head;
+    let found: { kind: NoteKind; id: string } | null = null;
+    this.state.doc.nodesBetween(head, this.state.doc.content.size, (node) => {
+      if (found) return false;
+      if (node.type.name === "opaque_inline" && (node.attrs.kind === "footnote" || node.attrs.kind === "endnote")) found = { kind: node.attrs.kind, id: String(node.attrs.noteId) };
+      return true;
+    });
+    const pick = found ?? (referenced.footnote.length ? { kind: "footnote" as NoteKind, id: referenced.footnote[0] } : referenced.endnote.length ? { kind: "endnote" as NoteKind, id: referenced.endnote[0] } : null);
+    if (!pick) {
+      this.status = "This document has no footnotes or endnotes";
+      this.emit();
+      return;
+    }
+    this.openNote(pick.kind, pick.id);
   }
 
   /** The page (0-based) the cursor is on. */
@@ -1343,9 +1608,22 @@ export class DocController {
     }
     const prepared = prepareSlice(slice, this, view.state);
     if (this.trackChanges) return trackedPaste(view, prepared.slice, this.reviewer);
-    if (prepared.changed || prepared.tr) {
+    // Word: a copied paragraph mark brings its paragraph's formatting along,
+    // so the first pasted paragraph keeps its style where it lands
+    const content = prepared.slice.content;
+    const first = prepared.slice.openStart > 0 && content.childCount > 1 && content.firstChild?.type.name === "paragraph" ? content.firstChild : null;
+    if (prepared.changed || prepared.tr || first) {
       const tr = prepared.tr ?? view.state.tr;
+      const from = tr.selection.from;
       tr.replaceSelection(prepared.slice);
+      if (first) {
+        const $at = tr.doc.resolve(tr.mapping.map(from, -1));
+        for (let d = $at.depth; d > 0; d--) {
+          if ($at.node(d).type.name !== "paragraph") continue;
+          tr.setNodeMarkup($at.before(d), undefined, { ...first.attrs, sect: $at.node(d).attrs.sect });
+          break;
+        }
+      }
       view.dispatch(tr.scrollIntoView().setMeta("uiEvent", "paste"));
       void uploadPendingImages(this);
       return true;
@@ -1430,16 +1708,34 @@ export class DocController {
   // Headers and footers
   // ------------------------------------------------------------------
 
+  private factsCache: { pages: PageInfo[]; sections: SectionInfo[]; evenOdd: boolean; list: PageFacts[] } | null = null;
+
+  /** Each page's section, header/footer type and page number. */
+  pageFacts(): PageFacts[] {
+    const sections = this.sections();
+    const evenOdd = this.state.doc.attrs.evenOdd === true;
+    const c = this.factsCache;
+    if (c && c.pages === this.pages && c.sections === sections && c.evenOdd === evenOdd) return c.list;
+    const list = pageFacts(this.pages, sections, evenOdd);
+    this.factsCache = { pages: this.pages, sections, evenOdd, list };
+    return list;
+  }
+
   /** Which header/footer a page uses. */
   storyType(page: number): "default" | "first" | "even" {
-    if (page === 0 && this.state.doc.attrs.titlePg === true) return "first";
-    if (this.state.doc.attrs.evenOdd === true && (page + 1) % 2 === 0) return "even";
-    return "default";
+    return this.pageFacts()[page]?.type ?? "default";
+  }
+
+  /** The header or footer a page shows, as something to edit. */
+  storyTarget(kind: "header" | "footer", page: number): HeaderFooterEdit {
+    const facts = this.pageFacts()[page] ?? { section: this.sections().length - 1, type: "default" as HfType };
+    const r = resolveStory(this.sections(), facts.section, kind, facts.type);
+    return { kind, type: facts.type, page, ref: r.ref, section: r.ref ? r.section : facts.section };
   }
 
   editStory(kind: "header" | "footer") {
-    const page = this.currentPage;
-    this.headerEdit = { kind, type: this.storyType(page), page };
+    this.noteEdit = null;
+    this.headerEdit = this.storyTarget(kind, this.currentPage);
     this.emit();
   }
 
@@ -1471,9 +1767,12 @@ export class DocController {
         doc = schema.nodes.doc.create(null, p({ jc: "center" }, this.fieldNodes("PAGE", "1")));
         break;
     }
-    const type = this.storyType(this.currentPage);
+    const target = this.storyTarget(kind, this.currentPage);
     this.headerEdit = null;
-    this.headerChanged(kind, type, doc);
+    if (doc) this.storyChanged(target, doc);
+    else if (target.ref?.startsWith("final:")) this.headerChanged(kind, target.ref.slice(6), null);
+    // Removing another section's header leaves it empty
+    else if (target.ref) this.storyChanged(target, schema.nodes.doc.create(null, schema.nodes.paragraph.create({ style: this.storyStyle(kind) })));
     if (doc) this.editStory(kind);
   }
 
@@ -1483,8 +1782,8 @@ export class DocController {
       ? [schema.text("Page "), ...this.fieldNodes("PAGE", "1"), schema.text(" of "), ...this.fieldNodes("NUMPAGES", String(this.pages.length))]
       : this.fieldNodes("PAGE", "1");
     const para = schema.nodes.paragraph.create({ style, jc: align === "left" ? null : align }, content);
-    const type = this.storyType(this.currentPage);
-    const existing = (kind === "header" ? this.headers : this.footers)[type];
+    const target = this.storyTarget(kind, this.currentPage);
+    const existing = this.storyDoc(kind, target.ref);
     // Keep the story's other paragraphs; replace an earlier page number
     const kept: PMNode[] = [];
     existing?.forEach((n) => {
@@ -1496,13 +1795,17 @@ export class DocController {
       if (!hasPage && (n.textContent.trim() || n.type.name !== "paragraph")) kept.push(n);
     });
     const doc = schema.nodes.doc.create(null, kind === "header" ? [para, ...kept] : [...kept, para]);
-    this.headerChanged(kind, type, doc);
+    this.storyChanged(target, doc);
   }
 
   removePageNumbers() {
     for (const kind of ["header", "footer"] as const) {
       const stories = kind === "header" ? this.headers : this.footers;
-      for (const [type, doc] of Object.entries(stories)) {
+      const all: [string, PMNode | null][] = [
+        ...Object.entries(stories).map(([t, d]): [string, PMNode | null] => [`final:${t}`, d]),
+        ...Object.entries(this.stories).filter(([rid]) => this.storyKinds[rid] === kind),
+      ];
+      for (const [ref, doc] of all) {
         if (!doc) continue;
         const kept: PMNode[] = [];
         let changed = false;
@@ -1515,7 +1818,10 @@ export class DocController {
           if (hasPage) changed = true;
           else kept.push(n);
         });
-        if (changed) this.headerChanged(kind, type, kept.length ? schema.nodes.doc.create(null, kept) : null);
+        if (!changed) continue;
+        const rest = kept.length ? schema.nodes.doc.create(null, kept) : null;
+        if (ref.startsWith("final:")) this.headerChanged(kind, ref.slice(6), rest);
+        else this.storyChanged({ kind, type: "default", page: 0, ref, section: 0 }, rest ?? schema.nodes.doc.create(null, schema.nodes.paragraph.create({ style: this.storyStyle(kind) })));
       }
     }
   }
@@ -1526,7 +1832,7 @@ export class DocController {
       this.insertField(instr, String(this.currentPage + 1));
       return;
     }
-    const nodes = this.fieldNodes(instr, String((this.headerEdit?.page ?? 0) + 1));
+    const nodes = this.fieldNodes(instr, this.pageFacts()[this.headerEdit?.page ?? 0]?.label ?? "1");
     v.dispatch(v.state.tr.replaceWith(v.state.selection.from, v.state.selection.to, Fragment.from(nodes)));
     v.focus();
   }

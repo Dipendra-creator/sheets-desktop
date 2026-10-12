@@ -4,7 +4,8 @@
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import type { DocController } from "./controller";
-import { formattingPlugin } from "./formatting";
+import { formattingKey, formattingPlugin } from "./formatting";
+import { noteLabel, NOTE_KINDS, referencedNotes, renderNote } from "./notes";
 import { geometryOf } from "./pagination";
 
 const BASE_CSS = `
@@ -22,6 +23,9 @@ body { margin: 0; background: #f3f3f3; }
 .pm-doc .opq-hidden, .pm-doc .fld-s, .pm-doc .fld-e, .pm-doc .hidden-text { display: none; }
 .pm-doc a { color: inherit; }
 .pm-doc img { max-width: 100%; }
+.pm-doc .opq-note a, .pm-doc .opq-noteRef { font-size: 65%; vertical-align: super; line-height: 0; text-decoration: none; }
+.notes { margin-top: 24px; }
+.notes hr { width: 2in; margin: 0 0 8px; border: 0; border-top: 1px solid #000; }
 @media print { body { background: none; } .page { box-shadow: none; margin: 0; max-width: none; } }
 `;
 
@@ -54,17 +58,47 @@ export async function documentHtml(ctl: DocController): Promise<string> {
   host.style.position = "fixed";
   host.style.left = "-10000px";
   document.body.appendChild(host);
+  const state = EditorState.create({ doc: ctl.state.doc, plugins: [formattingPlugin({ sheet: ctl.sheet, numbering: ctl.payload.numbering })] });
   const view = new EditorView(host, {
-    state: EditorState.create({ doc: ctl.state.doc, plugins: [formattingPlugin({ sheet: ctl.sheet, numbering: ctl.payload.numbering })] }),
+    state,
     editable: () => false,
     attributes: { class: "pm-doc" },
   });
   const content = view.dom.cloneNode(true) as HTMLElement;
   view.destroy();
-  host.remove();
   content.removeAttribute("contenteditable");
   content.removeAttribute("translate");
   content.querySelectorAll("[contenteditable]").forEach((el) => el.removeAttribute("contenteditable"));
+  // Footnote and endnote marks link to the notes, listed after the text
+  content.querySelectorAll<HTMLElement>(".opq-note").forEach((el) => {
+    const kind = el.classList.contains("opq-endnote") ? "endnote" : "footnote";
+    const a = document.createElement("a");
+    a.href = `#${kind}-${el.dataset.note ?? ""}`;
+    a.textContent = el.dataset.n ?? "";
+    el.removeAttribute("data-n");
+    el.appendChild(a);
+  });
+  const numbers = formattingKey.getState(state)?.notes;
+  const referenced = referencedNotes(ctl.state.doc);
+  const defaultTab = Number(ctl.payload.settings?.defaultTabStop ?? 720) || 720;
+  for (const kind of NOTE_KINDS) {
+    const ids = referenced[kind].filter((id) => ctl.notes[kind][id]);
+    if (!ids.length) continue;
+    const section = document.createElement("section");
+    section.className = `notes ${kind}s`;
+    section.appendChild(document.createElement("hr"));
+    for (const id of ids) {
+      const div = document.createElement("div");
+      div.className = "pm-doc note";
+      div.id = `${kind}-${id}`;
+      host.appendChild(div);
+      renderNote(div, ctl.notes[kind][id], noteLabel(kind, numbers?.get(`${kind}:${id}`) ?? 0), ctl.sheet, defaultTab);
+      div.querySelectorAll<HTMLElement>(".opq-noteRef").forEach((r) => (r.textContent = r.dataset.n ?? ""));
+      section.appendChild(div);
+    }
+    content.appendChild(section);
+  }
+  host.remove();
   await inlineImages(content);
   const g = geometryOf(ctl.state.doc);
   const title = ctl.payload.core?.title || ctl.info.title;

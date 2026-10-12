@@ -283,6 +283,24 @@ export function ReferencesTab({ ctl }: { ctl: DocController }) {
           <SmallButton icon="updateTable" label="Update Table" onClick={() => ctl.updateToc()} />
         </Stack>
       </RibbonGroup>
+      <RibbonGroup label="Footnotes">
+        <BigButton icon="footnote" label={"Insert\nFootnote"} title="Insert Footnote (Ctrl+Alt+F)" onClick={() => ctl.insertNote("footnote")} />
+        <Stack>
+          <SmallButton icon="endnote" label="Insert Endnote" title="Insert Endnote (Ctrl+Alt+D)" onClick={() => ctl.insertNote("endnote")} />
+          <SmallButton
+            icon="nextNote"
+            label="Next Footnote"
+            onClick={() => ctl.nextNote("footnote", 1)}
+            dropdown={[
+              { label: "Next Footnote", onClick: () => ctl.nextNote("footnote", 1) },
+              { label: "Previous Footnote", onClick: () => ctl.nextNote("footnote", -1) },
+              { label: "Next Endnote", onClick: () => ctl.nextNote("endnote", 1) },
+              { label: "Previous Endnote", onClick: () => ctl.nextNote("endnote", -1) },
+            ]}
+          />
+          <SmallButton icon="showNotes" label="Show Notes" onClick={() => ctl.showNotes()} />
+        </Stack>
+      </RibbonGroup>
       <RibbonGroup label="Captions">
         <BigButton icon="caption" label={"Insert\nCaption"} onClick={() => ctl.openDialog("caption")} />
       </RibbonGroup>

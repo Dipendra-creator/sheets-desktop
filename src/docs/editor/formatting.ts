@@ -13,12 +13,15 @@ import { borderCss, shadingColor } from "../model/render";
 import { cellMarginCss, markCss } from "../model/schema";
 import { mergePPr, tableLook, type StyleSheet } from "../model/styles";
 import { num, twips, ztw } from "../model/units";
+import { noteLabel, type NoteKind } from "./notes";
 
 type Attrs = Record<string, unknown>;
 
 export interface FormattingEnv {
   sheet: StyleSheet;
   numbering: Numbering;
+  /** Text of a footnote or endnote (the reference's tooltip). */
+  noteText?: (kind: NoteKind, id: string) => string;
 }
 
 export interface FormattingState {
@@ -227,7 +230,8 @@ function compute(doc: PMNode, env: FormattingEnv): FormattingState {
         const n = kind === "footnote" ? ++footnote : ++endnote;
         const id = String(node.attrs.noteId ?? "");
         notes.set(`${kind}:${id}`, n);
-        decos.push(Decoration.node(pos, pos + node.nodeSize, { "data-n": kind === "endnote" ? toRoman(n) : String(n) }));
+        const tip = env.noteText?.(kind, id);
+        decos.push(Decoration.node(pos, pos + node.nodeSize, { "data-n": noteLabel(kind, n), ...(tip ? { title: tip } : {}) }));
       } else if (node.attrs.hidden && /^commentRange(Start|End)$/.test(String(node.attrs.label))) {
         const id = /w:id="([^"]+)"/.exec(String(node.attrs.xml))?.[1];
         if (id) {
@@ -243,24 +247,6 @@ function compute(doc: PMNode, env: FormattingEnv): FormattingState {
     return true;
   });
   return { decos: DecorationSet.create(doc, decos), notes, labels };
-}
-
-function toRoman(n: number): string {
-  const r: [number, string][] = [
-    [10, "x"],
-    [9, "ix"],
-    [5, "v"],
-    [4, "iv"],
-    [1, "i"],
-  ];
-  let out = "";
-  for (const [v, s] of r) {
-    while (n >= v) {
-      out += s;
-      n -= v;
-    }
-  }
-  return out;
 }
 
 export function formattingPlugin(env: FormattingEnv): Plugin<FormattingState> {

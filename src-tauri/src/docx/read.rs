@@ -548,6 +548,11 @@ impl<'a> Ctx<'a> {
                         .unwrap_or_default();
                     out.push(opaque(&as_run(raw(self.src, c)), "sym", wattr(c, "font").unwrap_or("Symbol"), &ch, false, wrappers));
                 }
+                // The note's own number, at the start of a footnote or endnote
+                "footnoteRef" | "endnoteRef" => {
+                    let kind = if name == "footnoteRef" { "footnote" } else { "endnote" };
+                    out.push(opaque(&as_run(raw(self.src, c)), "noteRef", kind, "", false, wrappers));
+                }
                 "instrText" | "delInstrText" => {
                     out.push(opaque(&as_run(raw(self.src, c)), "fieldPart", "Field", "", true, wrappers));
                 }

@@ -219,6 +219,27 @@ registerIcons({
         <path d="M2 11.5h12M2 14h8" {...s} />
       </>
     ),
+    endnote: () => (
+      <>
+        <path d="M3.5 1.5h9v13h-9z" {...s} />
+        <text x="5" y="6.5" fontSize="5" fill={B} fontWeight="700">i</text>
+        <path d="M5.5 10h5M5.5 12.5h4" stroke={B} />
+      </>
+    ),
+    nextNote: () => (
+      <>
+        <text x="1" y="7" fontSize="6" fill="currentColor">ab</text>
+        <text x="8" y="4.5" fontSize="4.5" fill={B} fontWeight="700">1</text>
+        <path d="M3 11.5h7M8 9.5l2.5 2-2.5 2" {...s} />
+      </>
+    ),
+    showNotes: () => (
+      <>
+        <path d="M2.5 1.5h11v13h-11z" {...s} />
+        <path d="M4.5 10h4" stroke="currentColor" />
+        <path d="M4.5 12.5h7" stroke={B} />
+      </>
+    ),
     caption: () => (
       <>
         <rect x="2.5" y="1.5" width="11" height="8" {...s} />
