@@ -1,6 +1,51 @@
 # Changelog
 
-All notable changes to Sheets. Versions follow [Semantic Versioning](https://semver.org).
+All notable changes to Sheets and Docs. Versions follow [Semantic Versioning](https://semver.org).
+
+## [0.5.0] — 2026-10-12
+
+### Docs: a word processor for Word documents
+- **New app: Docs**, installed with Sheets (one download, one program, like Word next to
+  Excel). It opens and saves Word `.docx` files and has Word's ribbon (Home, Insert, Design,
+  Layout, References, Review, View), KeyTips (Alt), command search (Alt+Q) and Word's keyboard
+  shortcuts (F1 lists them).
+- **Faithful files**: Docs edits the document it opened. Everything it doesn't edit (charts,
+  SmartArt, equations, text boxes, content controls, embedded objects, custom XML) is written
+  back unchanged, so a document goes back to Word intact.
+- **Text and paragraphs**: fonts, colours, highlight, underline styles, caps and small caps,
+  Change Case, Format Painter, Clear Formatting; alignment, indents and tab stops (also on the
+  ruler), line and paragraph spacing, shading and borders, keep with next / keep lines together
+  / page break before; the Styles gallery and pane; bullets, numbering and multilevel lists.
+- **Pages**: laid out as you type in Print Layout (also Read Mode, Web Layout and Draft);
+  margins, orientation and paper size; page and section breaks; headers and footers (different
+  first page, odd & even pages, per section) with page numbers; cover pages, watermarks, page
+  colour and page borders.
+- **Tables and pictures**: tables from a grid, insert and delete rows and columns, merge and
+  split cells, table styles, header rows repeated on every page; pictures inserted, pasted or
+  dropped on the page, resized, with alt text; floating pictures keep their place.
+- **References and review**: table of contents, footnotes and endnotes at the bottom of each
+  page, captions, cross-references, bookmarks, page number and date fields (F9 updates them);
+  comments, Track Changes with Accept / Reject, word count, accessibility check, spell check as
+  you type; Navigation pane with headings and search; Find and Replace, Go To.
+- **Files**: `.docx`; `.docm`, `.dotx` and `.dotm` open as new documents (the original is never
+  overwritten); plain text and Markdown; export as text, Markdown or a single-file web page;
+  Print / Save as PDF; nine templates (resume, cover letter, business letter, report, meeting
+  notes, event flyer…).
+- **The same safety net as Sheets**: AutoRecover, Document Recovery after a crash, Recover
+  Unsaved Documents and version history.
+
+### Installing and switching
+- The Windows installer adds a **Docs** entry to the Start menu (the MSI too), opens `.docx`,
+  `.docm`, `.dotx` and `.dotm` files in Docs and shows the Docs icon on them.
+- The app button at the left of the title bar opens Sheets from Docs and Docs from Sheets.
+- `sheets --docs` starts in Docs; Word documents opened from Sheets (Open, drag and drop) open
+  in Docs, and on the Mac double-clicking a `.docx` file opens it in Docs.
+
+### Known limitations of Docs
+- Text columns show as a single column; a document uses the page size and orientation of its
+  last section; EMF/WMF pictures show as placeholders (they stay in the file); charts,
+  SmartArt, equations and text boxes are kept but can't be edited; `.doc`, `.rtf` and `.odt`
+  don't open yet; PDF goes through the print dialog.
 
 ## [0.4.2] — 2026-09-28
 

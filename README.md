@@ -13,6 +13,7 @@
 <p align="center">
   <a href="#download"><b>Download</b></a> &nbsp;·&nbsp;
   <a href="#meet-sheets">Introduction</a> &nbsp;·&nbsp;
+  <a href="#meet-docs">Docs</a> &nbsp;·&nbsp;
   <a href="#features">Features</a> &nbsp;·&nbsp;
   <a href="#why-sheets">Why Sheets</a> &nbsp;·&nbsp;
   <a href="#build-from-source">Build</a> &nbsp;·&nbsp;
@@ -48,6 +49,24 @@ it's open source under the [MIT License](LICENSE).
   <img src="docs/assets/screenshot.png" width="100%" alt="The Sheets window: Home ribbon, formula bar showing =SUM(D11:D20), a personal monthly budget with income and expense tables, and a column chart of projected and actual costs.">
 </p>
 
+## Meet Docs
+
+**New in 0.5: Sheets comes with Docs, a word processor that opens and saves Word `.docx` files.**
+Like Word next to Excel, Docs installs with Sheets, has its own **Docs** entry in the Windows
+Start menu and opens your `.docx` files with a double-click. In either app, the app button at
+the left of the title bar opens the other one.
+
+Docs has the Word tools you use every day: the ribbon (Home, Insert, Design, Layout, References,
+Review, View), styles and the Navigation pane, lists, tables, pictures, headers and footers, page
+numbers, footnotes, a table of contents, comments and Track Changes, laid out on real pages as
+you type. What Docs can't edit yet (charts, SmartArt, equations, content controls…) is kept
+exactly as it was, so a document from Word goes back to Word intact. It has the same safety net
+as Sheets: AutoRecover, Document Recovery, unsaved documents and version history.
+
+<p align="center">
+  <img src="docs/assets/docs-screenshot.png" width="100%" alt="The Docs window: Home ribbon with font, paragraph and styles groups; the Navigation pane listing the headings of an annual report; page 2 of the report with headings, a paragraph, a revenue table with a caption and a bulleted list.">
+</p>
+
 ## Download
 
 <p align="center">
@@ -66,6 +85,11 @@ Pick the file for your computer:
 | | `Sheets_<version>_x64-portable.exe`: a single file, nothing to install |
 | **macOS, Apple Silicon** (M1/M2/M3/M4) | `Sheets_<version>_aarch64.dmg` |
 | **macOS, Intel** | `Sheets_<version>_x64.dmg` |
+
+Every download contains both apps. The installer adds **Sheets** and **Docs** to the Start menu
+and opens `.xlsx`, `.csv` and `.docx` files; on the Mac, `Sheets.app` opens your `.docx` files in
+Docs, and the app button in the title bar switches between the two. The portable `.exe` starts
+Docs with `--docs`.
 
 <details>
 <summary><b>First launch</b>: the builds aren't code-signed yet</summary>
@@ -155,6 +179,69 @@ searchable list.
 
 </details>
 
+<details>
+<summary><b>Everything Docs can do</b></summary>
+<br>
+
+- **Files**: open and save Word documents (`.docx`); open `.docm`, `.dotx` and `.dotm` (saved as
+  a new `.docx`, never over the original), plain text and Markdown; export as plain text,
+  Markdown or a single-file web page; Print / Save as PDF; nine templates (resume, cover letter,
+  business letter, report, meeting notes, event flyer…); recent and pinned documents.
+- **Faithful round trips**: Docs edits the document in place. Parts it doesn't edit (charts,
+  SmartArt, equations, text boxes, content controls, embedded objects, custom XML) are written
+  back unchanged, and the document keeps its own styles, settings and theme.
+- **Safety**: AutoRecover, Document Recovery after a crash, Recover Unsaved Documents, version
+  history (File → Info), crash-safe saves.
+- **Text and paragraphs**: fonts, sizes, colours, highlight, underline styles, strikethrough,
+  sub/superscript, caps and small caps, Change Case, Format Painter, Clear Formatting; alignment,
+  indents (on the ruler too), line and paragraph spacing, shading, borders, tab stops, keep with
+  next / keep lines together / page break before; formatting marks.
+- **Styles**: the Styles gallery and pane with the document's own styles; headings drive the
+  Navigation pane (with search) and the table of contents.
+- **Lists**: bullets, numbering and multilevel lists that continue Word's numbering; Tab and
+  Shift+Tab change the level.
+- **Tables**: insert from a grid, rows and columns, merge and split cells, table styles,
+  shading, cell alignment, header rows repeated on every page.
+- **Pictures**: insert, paste or drag in; resize, alt text; floating pictures keep their position
+  and wrapping from the file.
+- **Pages**: margins, orientation, paper size, page and section breaks, cover pages and blank
+  pages; headers and footers (different first page, odd & even pages, per section) with page
+  numbers; watermarks, page colour and page borders (Design tab).
+- **References**: table of contents, footnotes and endnotes at the bottom of each page,
+  captions, cross-references, bookmarks; page number, page count, date and time fields (F9
+  updates them).
+- **Review**: comments, Track Changes with Accept / Reject, word count, accessibility check,
+  spell check as you type.
+- **View**: Print Layout, Read Mode, Web Layout and Draft; zoom, One Page, Page Width; Find and
+  Replace, Go To; command search (Alt+Q); KeyTips (Alt); multiple windows.
+
+</details>
+
+<details>
+<summary><b>Docs keyboard shortcuts</b></summary>
+<br>
+
+| | Windows | macOS |
+| --- | --- | --- |
+| Heading 1 / 2 / 3, Normal | Ctrl+Alt+1 / 2 / 3, Ctrl+Shift+N | ⌥⌘1 / 2 / 3, ⇧⌘N |
+| Bullets | Ctrl+Shift+L | ⇧⌘L |
+| Align left / center / right / justify | Ctrl+L / E / R / J | ⌘L / E / R / J |
+| Line spacing 1 / 1.5 / 2 | Ctrl+1 / 5 / 2 | ⌘1 / 5 / 2 |
+| Indent / outdent | Ctrl+M / Ctrl+Shift+M | ⌘M / ⇧⌘M |
+| Page break / line break | Ctrl+Enter / Shift+Enter | ⌘↩ / ⇧↩ |
+| Insert link | Ctrl+K | ⌘K |
+| Footnote / endnote | Ctrl+Alt+F / D | ⌃⌥F / D |
+| New comment | Ctrl+Alt+M | ⌥⌘M |
+| Track Changes | Ctrl+Shift+E | ⇧⌘E |
+| Search the document / Replace / Go To | Ctrl+F / Ctrl+H / Ctrl+G | ⌘F / ⌘H / ⌘G |
+| Update fields | F9 | F9 |
+| Change case | Shift+F3 | ⇧F3 |
+| Move paragraph up / down | Alt+Shift+↑ / ↓ | ⌥⇧↑ / ↓ |
+
+F1 (or Help → Keyboard Shortcuts) lists them all.
+
+</details>
+
 ## Why Sheets?
 
 Excel's best-known failures are silent: data changed on import, work lost in a crash, a formula
@@ -183,8 +270,10 @@ Details and sources: **[docs/EXCEL_PAIN_POINTS.md](docs/EXCEL_PAIN_POINTS.md)**.
 
 Planned next: data validation, notes and charts that Excel can display, page setup, formula
 auditing arrows, refreshable PivotTables, Linux packages, code-signed installers and co-authoring.
-See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the full Excel feature-parity matrix and release
-plan, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
+For Docs: text columns, mixed page sizes and orientations, legacy `.doc` import, direct PDF export,
+editable text boxes and shapes, and mail merge.
+See **[docs/ROADMAP.md](docs/ROADMAP.md)** for the Excel and Word feature-parity matrices and the
+release plan, and [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 ## Build from source
 
@@ -253,6 +342,11 @@ key in `tauri.conf.json`, and users install that release once by hand.
 - **Everything in one file.** Notes, charts and filter criteria are stored as JSON in a
   *very hidden* worksheet, the standard way add-ins keep private data in a workbook. Excel
   preserves it without showing it; Sheets strips it on load and re-creates it on save.
+- **Docs edits the document, not a copy.** A `.docx` is read into a ProseMirror document;
+  everything the editor doesn't understand travels along as an untouched XML island. Saving
+  replays the edits onto the package that was opened, so untouched parts stay byte-for-byte.
+- **One program, two apps.** Each window is a Sheets or a Docs window (`--docs` starts in Docs);
+  both share sessions, AutoRecover, version history, settings and updates.
 - **Extension points** for a future database layer: `storage::WorkbookStore`,
   `templates::TemplateProvider`, `sync::SyncBackend` (every edit already produces an IronCalc
   diff batch for live sync).
@@ -271,6 +365,8 @@ src-tauri/src
 │   ├── input.rs       Excel-like typed input (dates, times, currency) + literal protection
 │   ├── dto.rs         screen-ready DTOs (Excel pixels, resolved colours, style tables)
 │   └── merges.rs, styling.rs
+├── docx/            Word documents: read/write WordprocessingML, styles, numbering, notes, text export
+├── docs/            Docs sessions, file formats and templates
 ├── recovery.rs      AutoRecover snapshots, crash recovery, unsaved workbooks, version history
 ├── updates.rs       in-app updates: background checks, signed download/install, GitHub fallback
 ├── storage/         WorkbookStore trait + FileStore (.xlsx, .csv/.tsv), encoding detection, atomic saves
@@ -285,6 +381,7 @@ src
 │   ├── charts/        SVG chart renderer + interactive chart layer
 │   ├── FilterMenu.tsx, NotesLayer.tsx, print.ts
 ├── backstage/       start screen / File menu (recovery, versions, print)
+├── docs/            Docs: ProseMirror editor and pagination, ribbon, dialogs, panes, backstage
 ├── components/      icons, menus, popups, dialogs, colour picker
 └── lib/             A1 helpers, formula tokenizer, function catalogue, formats, platform
 ```
@@ -304,10 +401,15 @@ src
   ~150 ms for 500k filled cells. Fraction number formats render incorrectly in this
   IronCalc version.
 - Builds are not code-signed or notarized yet (see *Download*).
+- **Docs**: text columns are kept but shown as one column; a document uses the page size and
+  orientation of its last section; EMF/WMF pictures show as placeholders (kept in the file);
+  charts, SmartArt, equations and text boxes are kept but can't be edited; legacy `.doc`, `.rtf`
+  and `.odt` don't open yet; PDF goes through the print dialog. On the Mac, Docs opens from a
+  `.docx` file or the app button in Sheets (there is no separate Docs app icon).
 
 ## Feedback and contributing
 
-Try Sheets with one of your real files and say what's missing:
+Try Sheets or Docs with one of your real files and say what's missing:
 [open an issue](https://github.com/Dipendra-creator/sheets-desktop/issues). Bug reports that come
 with a sample file are the easiest to fix. Pull requests are welcome; run the tests above before
 sending one.
@@ -317,9 +419,9 @@ sending one.
 Sheets is free and open source under the [MIT License](LICENSE): you may use, copy, modify and
 share it, including commercially, as long as the copyright and licence notice stay with it.
 
-Excel and Microsoft 365 are trademarks of Microsoft Corporation. Sheets is an independent project
-and is not affiliated with, endorsed by or sponsored by Microsoft.
+Excel, Word and Microsoft 365 are trademarks of Microsoft Corporation. Sheets and Docs are an
+independent project and are not affiliated with, endorsed by or sponsored by Microsoft.
 
 <p align="center">
-  <sub>Built with Rust, Tauri 2, IronCalc and React.</sub>
+  <sub>Built with Rust, Tauri 2, IronCalc, ProseMirror and React.</sub>
 </p>
