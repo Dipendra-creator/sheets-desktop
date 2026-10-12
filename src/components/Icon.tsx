@@ -26,6 +26,15 @@ const small: Record<string, Draw> = {
       <path d="M2.2 5.7h4.6v4.6H2.2zM4.5 5.7v4.6M2.2 8h4.6" stroke="#fff" strokeWidth="1" fill="none" />
     </>
   ),
+  appDocs: () => (
+    <>
+      <rect x="4.5" y="1.5" width="11" height="13" rx="1.5" fill="#41A5EE" />
+      <rect x="4.5" y="1.5" width="11" height="4.3" fill="#2B7CD3" />
+      <rect x="4.5" y="10.2" width="11" height="4.3" fill="#185ABD" />
+      <rect x="0.5" y="4" width="8" height="8" rx="1" fill="#103F91" />
+      <path d="M2.2 6.4h4.6M2.2 8h4.6M2.2 9.6h3" stroke="#fff" strokeWidth="0.9" strokeLinecap="round" />
+    </>
+  ),
   save: () => (
     <>
       <path d="M2.5 2.5h9l2 2v9h-11z" {...s} />

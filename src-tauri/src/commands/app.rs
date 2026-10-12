@@ -258,14 +258,24 @@ pub fn window_book(window: WebviewWindow, state: State<'_, AppState>) -> AppResu
 /// startup file: `app_info` does that.
 #[tauri::command(async)]
 pub fn window_kind(window: WebviewWindow, state: State<'_, AppState>) -> AppResult<String> {
-    let label = window.label();
+    let label = window.label().to_string();
+    let mut kind = window_app(&state, &label);
     if label == "main" {
         if let Some(f) = state.startup_file.lock().unwrap().as_ref() {
-            return Ok(AppKind::for_path(f, state.startup_app).as_str().to_string());
+            kind = AppKind::for_path(f, state.startup_app);
         }
     }
-    Ok(window_app(&state, label).as_str().to_string())
+    // Docs windows show the Docs icon in the taskbar and title bar
+    if kind == AppKind::Docs {
+        if let Ok(icon) = tauri::image::Image::from_bytes(DOCS_ICON) {
+            let _ = window.set_icon(icon);
+        }
+    }
+    Ok(kind.as_str().to_string())
 }
+
+/// The Docs app icon (the bundle's icon is Sheets').
+const DOCS_ICON: &[u8] = include_bytes!("../../icons/docs/docs-256.png");
 
 /// Document currently bound to the calling window (restores it after a reload).
 #[tauri::command(async)]

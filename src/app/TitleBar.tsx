@@ -1,8 +1,9 @@
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Icon } from "../components/Icon";
 import { Popup } from "../components/Popup";
-import { useApp } from "./context";
+import { APP_NAME, useApp } from "./context";
 import { isMac, keyLabel } from "../lib/platform";
 import { UpdateButton } from "./UpdateButton";
 
@@ -64,6 +65,46 @@ export function Avatar() {
             >
               Options
             </button>
+          </div>
+        </Popup>
+      )}
+    </>
+  );
+}
+
+/** The app's logo; clicking it switches between the apps of the suite. */
+function AppLauncher() {
+  const [anchor, setAnchor] = useState<DOMRect | null>(null);
+  const docs = APP_NAME === "Docs";
+  const apps: { kind: "sheets" | "docs"; name: string; icon: string; desc: string }[] = [
+    { kind: "docs", name: "Docs", icon: "appDocs", desc: "Write documents (.docx)" },
+    { kind: "sheets", name: "Sheets", icon: "logo", desc: "Spreadsheets (.xlsx, .csv)" },
+  ];
+  return (
+    <>
+      <button className="tb-logo tb-apps" title="Apps" onClick={(e) => setAnchor(e.currentTarget.getBoundingClientRect())}>
+        <Icon name={docs ? "appDocs" : "logo"} size={16} />
+      </button>
+      {anchor && (
+        <Popup anchor={anchor} placement="bottom-start" onClose={() => setAnchor(null)}>
+          <div className="menu flyout app-launcher">
+            <div className="menu-header">Apps</div>
+            {apps.map((a) => (
+              <button
+                key={a.kind}
+                className="menu-item app-item"
+                onClick={() => {
+                  setAnchor(null);
+                  invoke("open_app_window", { kind: a.kind, file: null }).catch(() => {});
+                }}
+              >
+                <Icon name={a.icon} size={16} />
+                <span className="menu-label app-label">
+                  <b>{a.name}</b>
+                  <span className="muted small">{a.desc}</span>
+                </span>
+              </button>
+            ))}
           </div>
         </Popup>
       )}
@@ -175,9 +216,7 @@ export function TitleBar({ left, center, title, right }: { left?: ReactNode; cen
       <div className="tb-left" data-tauri-drag-region>
         {/* macOS draws its traffic-light buttons here */}
         {isMac && <span className="tb-traffic" data-tauri-drag-region />}
-        <span className="tb-logo" data-tauri-drag-region>
-          <Icon name="logo" size={16} />
-        </span>
+        <AppLauncher />
         {left}
         {title && (
           <span className="tb-title" data-tauri-drag-region>

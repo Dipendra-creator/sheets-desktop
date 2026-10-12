@@ -1,7 +1,7 @@
 [package]
 name = "sheets"
-version = "0.4.2"
-description = "Sheets - a lightweight, reliable spreadsheet desktop app"
+version = "0.5.0"
+description = "Sheets and Docs - a lightweight, reliable spreadsheet and word processor desktop app"
 authors = ["Dipendra Bhardwaj"]
 license = "MIT"
 edition = "2021"
@@ -19,7 +19,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["image-png"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }

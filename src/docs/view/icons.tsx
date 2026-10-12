@@ -17,16 +17,16 @@ registerIcons({
       <>
         <rect x="4.5" y="1.5" width="11" height="13" rx="1.5" fill="#41A5EE" />
         <rect x="4.5" y="1.5" width="11" height="4.3" fill="#2B7CD3" />
-        <rect x="4.5" y="10.2" width="11" height="4.3" fill="#103F91" />
-        <rect x="0.5" y="4" width="8" height="8" rx="1" fill="#185ABD" />
-        <path d="M2 5.8l1 4.4 1.5-3.4 1.5 3.4 1-4.4" stroke="#fff" strokeWidth="0.9" fill="none" strokeLinejoin="round" />
+        <rect x="4.5" y="10.2" width="11" height="4.3" fill="#185ABD" />
+        <rect x="0.5" y="4" width="8" height="8" rx="1" fill="#103F91" />
+        <path d="M2.2 6.4h4.6M2.2 8h4.6M2.2 9.6h3" stroke="#fff" strokeWidth="0.9" strokeLinecap="round" />
       </>
     ),
     docx: () => (
       <>
         <path d="M3.5 1.5h6l3 3v10h-9z" fill={W} stroke="#8c8c8c" />
         <rect x="1" y="6" width="7" height="6" rx="0.8" fill={B2} />
-        <path d="M2.2 7.3l.8 3.4 1-2.4 1 2.4.8-3.4" stroke="#fff" strokeWidth="0.8" fill="none" />
+        <path d="M2.4 7.8h4.2M2.4 9h4.2M2.4 10.2h2.6" stroke="#fff" strokeWidth="0.7" strokeLinecap="round" />
       </>
     ),
     bullets: () => (
@@ -360,9 +360,9 @@ registerIcons({
       <>
         <rect x="9" y="3" width="21" height="26" rx="2.5" fill="#41A5EE" />
         <rect x="9" y="3" width="21" height="8.7" fill="#2B7CD3" />
-        <rect x="9" y="20.3" width="21" height="8.7" fill="#103F91" />
-        <rect x="2" y="8" width="16" height="16" rx="2" fill="#185ABD" />
-        <path d="M5 11.5l2 9 3-7 3 7 2-9" stroke="#fff" strokeWidth="1.6" fill="none" strokeLinejoin="round" />
+        <rect x="9" y="20.3" width="21" height="8.7" fill="#185ABD" />
+        <rect x="2" y="8" width="16" height="16" rx="2" fill="#103F91" />
+        <path d="M5.2 12.6h9.6M5.2 16h9.6M5.2 19.4h6.2" stroke="#fff" strokeWidth="1.8" strokeLinecap="round" />
       </>
     ),
     docx: () => (
@@ -370,7 +370,7 @@ registerIcons({
         <path d="M8.5 2.5h12l6 6v21h-18z" fill={W} stroke="#8c8c8c" />
         <path d="M20.5 2.5v6h6" fill="none" stroke="#8c8c8c" />
         <rect x="3" y="12" width="14" height="13" rx="1.5" fill={B2} />
-        <path d="M5.5 14.8l1.5 7 2-5 2 5 1.5-7" stroke="#fff" strokeWidth="1.3" fill="none" strokeLinejoin="round" />
+        <path d="M5.8 15.8h8.4M5.8 18.5h8.4M5.8 21.2h5.2" stroke="#fff" strokeWidth="1.4" strokeLinecap="round" />
       </>
     ),
     pageBreak: () => (
