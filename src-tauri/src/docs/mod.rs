@@ -151,10 +151,18 @@ impl DocSession {
     pub fn payload(&self) -> Value {
         let mut p = self.opened.clone();
         if let Some(s) = &self.snapshot {
-            for key in ["doc", "headers", "footers"] {
-                if let Some(v) = s.get(key) {
-                    if !v.is_null() {
-                        p[key] = v.clone();
+            if let Some(v) = s.get("doc").filter(|v| !v.is_null()) {
+                p["doc"] = v.clone();
+            }
+            // Headers and footers come back one by one (only the edited ones)
+            for key in ["headers", "footers"] {
+                let Some(over) = s.get(key).and_then(|v| v.as_object()) else { continue };
+                if !p[key].is_object() {
+                    p[key] = json!({});
+                }
+                if let Some(base) = p[key].as_object_mut() {
+                    for (k, v) in over {
+                        base.insert(k.clone(), v.clone());
                     }
                 }
             }
@@ -177,6 +185,7 @@ impl DocSession {
                 stats,
                 author,
                 core: snapshot.and_then(|s| s.get("core")).filter(|c| c.is_object()),
+                comments: snapshot.and_then(|s| s.get("comments")).filter(|c| c.is_object()),
             },
         )
         .map_err(AppError::Io)

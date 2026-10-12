@@ -105,7 +105,7 @@ fn resave(bytes: &[u8]) -> (Value, Vec<u8>) {
     let footers = opened.payload["footers"].clone();
     let out = save(
         &opened.state,
-        &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({ "words": 10 }), author: "Tester", core: None },
+        &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({ "words": 10 }), author: "Tester", core: None, comments: None },
     )
     .unwrap();
     (opened.payload, out)
@@ -268,7 +268,7 @@ fn edits_are_written() {
     let footers = json!({ "default": { "type": "doc", "content": [ { "type": "paragraph", "content": [ { "type": "text", "text": "Page footer" } ] } ] } });
     doc["attrs"]["page"]["pgSz"] = json!({ "w": "16838", "h": "11906", "orient": "landscape" });
     let headers = opened.payload["headers"].clone();
-    let out = save(&opened.state, &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({}), author: "T", core: None }).unwrap();
+    let out = save(&opened.state, &SaveInput { doc: &doc, headers: Some(&headers), footers: Some(&footers), stats: &json!({}), author: "T", core: None, comments: None }).unwrap();
     let pkg = Package::read(&out).unwrap();
     let styles = pkg.text("word/styles.xml").unwrap();
     assert!(styles.contains("w:styleId=\"Heading4\""));
@@ -299,7 +299,7 @@ fn new_pictures_and_unbalanced_fields() {
     doc["content"].as_array_mut().unwrap().push(json!({ "type": "paragraph", "content": [
         { "type": "image", "attrs": { "target": "word/media/image9.png", "cx": 100000, "cy": 100000, "alt": "new" } }
     ] }));
-    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None }).unwrap();
+    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None }).unwrap();
     let pkg = Package::read(&out).unwrap();
     assert!(pkg.get("word/media/image9.png").is_some());
     let rels = pkg.text("word/_rels/document.xml.rels").unwrap();
@@ -315,6 +315,33 @@ fn new_pictures_and_unbalanced_fields() {
 }
 
 #[test]
+fn fallback_pictures() {
+    // A Mac-only PDF picture with a PNG fallback shows (and keeps) both
+    let mut pkg = Package::read(&sample_docx()).unwrap();
+    let xml = pkg.text("word/document.xml").unwrap().replace(
+        "<pic:blipFill><a:blip r:embed=\"rIdImg\"/>",
+        concat!(
+            "<mc:AlternateContent><mc:Choice Requires=\"ma\"><pic:blipFill><a:blip r:embed=\"rIdPdf\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill></mc:Choice>",
+            "<mc:Fallback><pic:blipFill><a:blip r:embed=\"rIdImg\"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill></mc:Fallback></mc:AlternateContent>",
+            "<pic:blipFill><a:blip r:embed=\"rIdImg\"/>"
+        ),
+    );
+    pkg.set("word/document.xml", xml);
+    pkg.set("word/media/image9.pdf", b"%PDF-1.4".to_vec());
+    let rels = pkg.text("word/_rels/document.xml.rels").unwrap().replace(
+        "</Relationships>",
+        "<Relationship Id=\"rIdPdf\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/image\" Target=\"media/image9.pdf\"/></Relationships>",
+    );
+    pkg.set("word/_rels/document.xml.rels", rels);
+    let bytes = pkg.write().unwrap();
+    let (payload, saved) = resave(&bytes);
+    let image = find(&payload["doc"], &|n| n["type"] == "image").unwrap();
+    assert_eq!(image["attrs"]["target"], "word/media/image1.png");
+    let xml = document_xml(&saved);
+    assert!(xml.contains("r:embed=\"rIdPdf\"") && xml.contains("r:embed=\"rIdImg\""));
+}
+
+#[test]
 fn blank_document() {
     let opened = super::blank();
     assert_eq!(opened.payload["doc"]["content"].as_array().unwrap().len(), 1);
@@ -324,7 +351,7 @@ fn blank_document() {
     let doc = json!({ "type": "doc", "attrs": opened.payload["doc"]["attrs"].clone(), "content": [
         { "type": "paragraph", "attrs": { "style": "Title" }, "content": [ { "type": "text", "text": "Hello" } ] }
     ] });
-    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None }).unwrap();
+    let out = save(&opened.state, &SaveInput { doc: &doc, headers: None, footers: None, stats: &json!({}), author: "T", core: None, comments: None }).unwrap();
     let reopened = open(&out).unwrap();
     assert_eq!(reopened.payload["doc"]["content"][0]["content"][0]["text"], "Hello");
 }

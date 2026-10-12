@@ -143,6 +143,12 @@ fn graphic_label(node: Node) -> (&'static str, &'static str) {
     ("object", "Object")
 }
 
+/// True for picture formats the editor can display.
+fn drawable_image(target: &str) -> bool {
+    let ext = target.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "jpe" | "gif" | "bmp" | "svg" | "webp" | "ico")
+}
+
 /// A `w:drawing` holding a picture → image attributes.
 fn picture(ctx: &Ctx, drawing: Node) -> Option<Value> {
     let holder = drawing
@@ -153,9 +159,17 @@ fn picture(ctx: &Ctx, drawing: Node) -> Option<Value> {
     let cx: i64 = extent.attribute("cx")?.parse().ok()?;
     let cy: i64 = extent.attribute("cy")?.parse().ok()?;
     let doc_pr = holder.children().find(|c| c.is_element() && local(*c) == "docPr");
-    let blip = holder.descendants().find(|d| d.is_element() && d.tag_name().namespace() == Some(A) && local(*d) == "blip")?;
-    let rid = rattr(blip, "embed").or_else(|| rattr(blip, "link"))?;
-    let rel = ctx.rels.get(rid)?;
+    // A picture can name several images (a Mac-only PDF with a PNG
+    // fallback…): show the first one a browser can draw.
+    let images: Vec<_> = holder
+        .descendants()
+        .filter(|d| d.is_element() && d.tag_name().namespace() == Some(A) && local(*d) == "blip")
+        .filter_map(|blip| {
+            let rid = rattr(blip, "embed").or_else(|| rattr(blip, "link"))?;
+            Some((rid, ctx.rels.get(rid)?))
+        })
+        .collect();
+    let (rid, rel) = images.iter().find(|(_, rel)| drawable_image(&rel.target)).or(images.first()).copied()?;
     let target = if rel.external { rel.target.clone() } else { resolve(ctx.part, &rel.target) };
     Some(json!({
         "rid": rid,
@@ -462,6 +476,15 @@ impl<'a> Ctx<'a> {
                     }
                 }
                 "tab" => out.push(with_marks(json!({ "type": "tab" }), &marks)),
+                // An alignment tab (headers and footers: centre, right)
+                "ptab" => out.push(with_marks(
+                    json!({ "type": "tab", "attrs": {
+                        "align": wattr(c, "alignment").unwrap_or("left"),
+                        "relativeTo": wattr(c, "relativeTo").unwrap_or("margin"),
+                        "leader": wattr(c, "leader").unwrap_or("none"),
+                    } }),
+                    &marks,
+                )),
                 "br" => {
                     let kind = match wattr(c, "type") {
                         Some("page") => "page",

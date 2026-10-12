@@ -11,6 +11,7 @@ import { Backstage } from "./backstage/Backstage";
 import { MessageBox } from "./components/Dialog";
 import { Icon } from "./components/Icon";
 import { initLocale } from "./lib/formats";
+import { docsApi, isDocPath } from "./docs/api";
 import { WorkbookView } from "./workbook/WorkbookView";
 
 interface Ask {
@@ -21,6 +22,9 @@ interface Ask {
   resolve: (v: string) => void;
 }
 
+/** Files Sheets lists among recent files (documents belong to Docs). */
+const BOOK_RECENT = /\.(xlsx|xlsm|csv|tsv|txt)$/i;
+
 function applyTheme(theme: Settings["theme"]) {
   const resolved = theme === "system" ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark") : theme;
   document.documentElement.dataset.theme = resolved;
@@ -29,7 +33,7 @@ function applyTheme(theme: Settings["theme"]) {
 export default function App() {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [settings, setSettings] = useState<Settings | null>(null);
-  const [recent, setRecent] = useState<RecentItem[]>([]);
+  const [recent, setRecentAll] = useState<RecentItem[]>([]);
   const [templates, setTemplates] = useState<TemplateMeta[]>([]);
   const [book, setBook] = useState<WorkbookInfo | null>(null);
   const [asks, setAsks] = useState<Ask[]>([]);
@@ -52,9 +56,11 @@ export default function App() {
     [ask],
   );
 
+  const setRecent = useCallback((list: RecentItem[]) => setRecentAll(list.filter((r) => BOOK_RECENT.test(r.name))), []);
+
   const refreshRecent = useCallback(async () => {
     setRecent(await api.listRecent());
-  }, []);
+  }, [setRecent]);
 
   // Route a created/opened workbook to this window or a new one (like Excel)
   const show = useCallback(
@@ -94,6 +100,11 @@ export default function App() {
 
   const openPath = useCallback(
     async (path: string) => {
+      // Word documents open in Docs
+      if (isDocPath(path)) {
+        await docsApi.openInApp(path).catch((e) => error(errorMessage(e)));
+        return;
+      }
       try {
         const res = await api.openWorkbook(path);
         await show(res.info, res.alreadyOpen);
@@ -156,9 +167,14 @@ export default function App() {
         } else if (label.startsWith("book-")) {
           initial = await api.info(label.slice(5));
         } else if (appInfo.startupFile) {
-          const res = await api.openWorkbook(appInfo.startupFile);
-          initial = res.info;
-          if (res.warning) ask(APP_NAME, res.warning, [{ label: "OK", value: "ok", primary: true }], "warning");
+          // A file that can't be opened leaves the start screen up
+          try {
+            const res = await api.openWorkbook(appInfo.startupFile);
+            initial = res.info;
+            if (res.warning) ask(APP_NAME, res.warning, [{ label: "OK", value: "ok", primary: true }], "warning");
+          } catch (e) {
+            error(errorMessage(e));
+          }
         } else if (!appInfo.settings.showStartScreen) {
           initial = await api.newWorkbook();
         }
@@ -185,13 +201,13 @@ export default function App() {
     };
   }, []);
 
-  // Drop .xlsx / .csv files onto the window to open them
+  // Drop .xlsx / .csv files onto the window to open them (documents go to Docs)
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     getCurrentWebview()
       .onDragDropEvent((event) => {
         if (event.payload.type !== "drop") return;
-        const files = event.payload.paths.filter((p) => /\.(xlsx|xlsm|csv|tsv|txt)$/i.test(p));
+        const files = event.payload.paths.filter((p) => /\.(xlsx|xlsm|csv|tsv|txt)$/i.test(p) || isDocPath(p));
         files.forEach((p) => openPathRef.current(p));
       })
       .then((u) => (unlisten = u))
@@ -241,7 +257,7 @@ export default function App() {
             openOptions: () => setOptions(true),
           }
         : null,
-    [info, settings, recent, templates, book, saveSettings, refreshRecent, newWorkbook, show, openPath, browse, ask, error],
+    [info, settings, recent, templates, book, saveSettings, refreshRecent, setRecent, newWorkbook, show, openPath, browse, ask, error],
   );
 
   if (fatal) {

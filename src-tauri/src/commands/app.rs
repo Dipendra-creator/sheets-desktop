@@ -254,6 +254,19 @@ pub fn window_book(window: WebviewWindow, state: State<'_, AppState>) -> AppResu
     Ok(state.book_of_window(window.label()))
 }
 
+/// The app the calling window shows ("sheets" or "docs"). Doesn't take the
+/// startup file: `app_info` does that.
+#[tauri::command(async)]
+pub fn window_kind(window: WebviewWindow, state: State<'_, AppState>) -> AppResult<String> {
+    let label = window.label();
+    if label == "main" {
+        if let Some(f) = state.startup_file.lock().unwrap().as_ref() {
+            return Ok(AppKind::for_path(f, state.startup_app).as_str().to_string());
+        }
+    }
+    Ok(window_app(&state, label).as_str().to_string())
+}
+
 /// Document currently bound to the calling window (restores it after a reload).
 #[tauri::command(async)]
 pub fn window_doc(window: WebviewWindow, state: State<'_, AppState>) -> AppResult<Option<String>> {

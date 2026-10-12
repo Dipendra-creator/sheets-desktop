@@ -30,6 +30,7 @@ pub const CT_HEADER: &str = "application/vnd.openxmlformats-officedocument.wordp
 pub const CT_FOOTER: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml";
 pub const CT_NUMBERING: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml";
 pub const CT_STYLES: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml";
+pub const CT_COMMENTS: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml";
 pub const CT_CORE: &str = "application/vnd.openxmlformats-package.core-properties+xml";
 
 #[derive(Clone, Debug, PartialEq, Eq)]

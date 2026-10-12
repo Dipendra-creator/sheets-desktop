@@ -122,6 +122,7 @@ pub fn run() {
             app::open_book_window,
             app::list_book_windows,
             app::window_doc,
+            app::window_kind,
             app::open_doc_window,
             app::open_app_window,
             app::open_in_app,

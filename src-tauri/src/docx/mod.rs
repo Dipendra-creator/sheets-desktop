@@ -30,7 +30,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde_json::{json, Map, Value};
 
 use package::{
-    rels_name, resolve, Package, CT_CORE, CT_DOCUMENT, CT_FOOTER, CT_HEADER, CT_MACRO_DOCUMENT, CT_MACRO_TEMPLATE, CT_NUMBERING,
+    rels_name, resolve, Package, CT_COMMENTS, CT_CORE, CT_DOCUMENT, CT_FOOTER, CT_HEADER, CT_MACRO_DOCUMENT, CT_MACRO_TEMPLATE, CT_NUMBERING,
     CT_STYLES, CT_TEMPLATE, REL_APP, REL_COMMENTS, REL_CORE, REL_ENDNOTES, REL_FOOTER, REL_FOOTNOTES, REL_HEADER, REL_NUMBERING,
     REL_SETTINGS, REL_STYLES, REL_THEME,
 };
@@ -395,6 +395,8 @@ pub struct SaveInput<'a> {
     pub author: &'a str,
     /// Document properties edited in the app (title, subject, keywords…).
     pub core: Option<&'a Value>,
+    /// Comments added or edited in the app (null: deleted), by id.
+    pub comments: Option<&'a Value>,
 }
 
 fn scan_doc_pr_ids(text: &str, ids: &mut DocPrIds) {
@@ -522,6 +524,23 @@ pub fn save(state: &DocState, input: &SaveInput) -> Result<Vec<u8>, String> {
         &main,
         format!("<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n{root}<{prefix}body>{body_xml}{sect}</{prefix}body></{qn}>"),
     );
+
+    // Comments added, edited or deleted in the app
+    if let Some(edits) = input.comments.and_then(|c| c.as_object()).filter(|c| !c.is_empty()) {
+        let existing = part_by_rel(&pkg, &main, REL_COMMENTS);
+        let part = existing.clone().unwrap_or_else(|| "word/comments.xml".to_string());
+        let original = existing.as_ref().and_then(|p| pkg.text(p));
+        let updated = parts::merge_comments(original.as_deref(), edits);
+        pkg.set(&part, updated);
+        if existing.is_none() {
+            main_rels.ensure(REL_COMMENTS, "comments.xml", false);
+            ct.set_override(&part, CT_COMMENTS);
+        }
+        if edits.values().any(|v| !v.is_null()) {
+            used_styles.insert("CommentText".to_string());
+            used_styles.insert("CommentReference".to_string());
+        }
+    }
 
     // Styles used but not defined
     let styles_part = match part_by_rel(&pkg, &main, REL_STYLES) {

@@ -135,6 +135,27 @@ fn patch_tag_attr(xml: &str, tag: &str, attr: &str, value: &str) -> String {
     xml.to_string()
 }
 
+/// Like `patch_tag_attr`, for every `tag` element.
+fn patch_every_tag_attr(xml: &str, tag: &str, attr: &str, value: &str) -> String {
+    let mut starts = vec![];
+    let mut pos = 0;
+    while let Some(i) = xml[pos..].find('<') {
+        let start = pos + i;
+        let Some(name_end) = xml[start + 1..].find(|c: char| c.is_whitespace() || c == '>' || c == '/').map(|e| start + 1 + e) else { break };
+        let name = &xml[start + 1..name_end];
+        if name.ends_with(tag) && (name.len() == tag.len() || name.as_bytes()[name.len() - tag.len() - 1] == b':') {
+            starts.push(start);
+        }
+        pos = start + 1;
+    }
+    let mut out = xml.to_string();
+    for start in starts.into_iter().rev() {
+        let patched = patch_tag_attr(&out[start..], tag, attr, value);
+        out.replace_range(start.., &patched);
+    }
+    out
+}
+
 fn tag_attr<'x>(xml: &'x str, tag: &str, attr: &str) -> Option<&'x str> {
     let mut pos = 0;
     while let Some(i) = xml[pos..].find('<') {
@@ -368,7 +389,18 @@ impl<'a> PartWriter<'a> {
                 let content = Self::text_content(n["text"].as_str().unwrap_or(""), in_del);
                 self.run(marks, &content)
             }
-            "tab" => self.run(marks, "<w:tab/>"),
+            "tab" => match s(&a, "align") {
+                Some(align) => {
+                    let ptab = format!(
+                        "<w:ptab w:relativeTo=\"{}\" w:alignment=\"{}\" w:leader=\"{}\"/>",
+                        esc(s(&a, "relativeTo").unwrap_or("margin")),
+                        esc(align),
+                        esc(s(&a, "leader").unwrap_or("none"))
+                    );
+                    self.run(marks, &ptab)
+                }
+                None => self.run(marks, "<w:tab/>"),
+            },
             "hard_break" => {
                 let mut br = String::from("<w:br");
                 match s(&a, "type") {
@@ -452,8 +484,10 @@ impl<'a> PartWriter<'a> {
         if let Some(raw) = s(a, "raw").filter(|r| !r.is_empty()) {
             // The original drawing (keeps wrapping, effects…), patched where it changed
             let mut x = raw.to_string();
-            if tag_attr(&x, "blip", "r:embed").map(|old| old != rid).unwrap_or(false) {
-                x = patch_tag_attr(&x, "blip", "r:embed", &rid);
+            // A new picture: point every image of the drawing at it (a
+            // drawing with a fallback image already names it, and stays)
+            if tag_attr(&x, "blip", "r:embed").is_some() && !x.contains(&format!("r:embed=\"{rid}\"")) {
+                x = patch_every_tag_attr(&x, "blip", "r:embed", &rid);
             }
             if tag_attr(&x, "extent", "cx").and_then(|v| v.parse::<i64>().ok()) != Some(cx)
                 || tag_attr(&x, "extent", "cy").and_then(|v| v.parse::<i64>().ok()) != Some(cy)

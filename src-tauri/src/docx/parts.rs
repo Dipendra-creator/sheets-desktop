@@ -228,6 +228,75 @@ pub fn update_app(original: &[u8], stats: &Value) -> String {
     out
 }
 
+/// `<w:comment>` for a comment written in the app (one paragraph per line).
+fn comment_xml(id: &str, c: &Value) -> String {
+    let s = |k: &str| c.get(k).and_then(|v| v.as_str()).unwrap_or("");
+    let mut out = format!(
+        "<w:comment w:id=\"{}\" w:author=\"{}\" w:date=\"{}\" w:initials=\"{}\">",
+        esc(id),
+        esc(s("author")),
+        esc(s("date")),
+        esc(s("initials"))
+    );
+    for (i, line) in s("text").split('\n').enumerate() {
+        out.push_str("<w:p><w:pPr><w:pStyle w:val=\"CommentText\"/></w:pPr>");
+        if i == 0 {
+            out.push_str("<w:r><w:rPr><w:rStyle w:val=\"CommentReference\"/></w:rPr><w:annotationRef/></w:r>");
+        }
+        if !line.is_empty() {
+            out.push_str(&format!("<w:r><w:t xml:space=\"preserve\">{}</w:t></w:r>", esc_text(line)));
+        }
+        out.push_str("</w:p>");
+    }
+    out.push_str("</w:comment>");
+    out
+}
+
+/// The comments part with comments added, replaced (edited) or removed (null).
+pub fn merge_comments(original: Option<&str>, edits: &Map<String, Value>) -> String {
+    let fresh = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\r\n",
+        "<w:comments xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" ",
+        "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"></w:comments>"
+    );
+    let text = original.unwrap_or(fresh).to_string();
+    let Ok(doc) = parse(&text) else { return text };
+    let root = doc.root_element();
+    // (range, replacement) for existing comments, in document order
+    let mut edits_at: Vec<(std::ops::Range<usize>, String)> = Vec::new();
+    let mut seen = std::collections::BTreeSet::new();
+    for c in root.children().filter(|c| is_w(*c, "comment")) {
+        let Some(id) = wattr(c, "id") else { continue };
+        if let Some(v) = edits.get(id) {
+            seen.insert(id.to_string());
+            let repl = if v.is_null() { String::new() } else { comment_xml(id, v) };
+            edits_at.push((c.range(), repl));
+        }
+    }
+    let mut added = String::new();
+    for (id, v) in edits {
+        if !v.is_null() && !seen.contains(id) {
+            added.push_str(&comment_xml(id, v));
+        }
+    }
+    let mut out = String::with_capacity(text.len() + added.len());
+    let mut pos = 0;
+    for (range, repl) in edits_at {
+        out.push_str(&text[pos..range.start]);
+        out.push_str(&repl);
+        pos = range.end;
+    }
+    let close = text[..root.range().end].rfind("</").unwrap_or(root.range().end);
+    if close >= pos {
+        out.push_str(&text[pos..close]);
+        out.push_str(&added);
+        out.push_str(&text[close..]);
+    } else {
+        out.push_str(&text[pos..]);
+    }
+    out
+}
+
 /// The current time as a W3C date (UTC, seconds).
 pub fn w3c_now() -> String {
     let secs = std::time::SystemTime::now()
@@ -274,5 +343,22 @@ mod tests {
         assert!(updated.contains("<Company>BB</Company>"));
         assert!(updated.contains("<Words>42</Words>"));
         assert!(updated.contains("<Pages>3</Pages></Properties>"));
+    }
+
+    #[test]
+    fn comments_are_merged() {
+        let mut edits = Map::new();
+        edits.insert("1".into(), json!({ "author": "Ann", "initials": "A", "date": "2026-01-01T00:00:00Z", "text": "Check this\nand that" }));
+        let fresh = merge_comments(None, &edits);
+        let parsed = read_comments(fresh.as_bytes());
+        assert_eq!(parsed["1"]["author"], "Ann");
+        assert!(parsed["1"]["text"].as_str().unwrap().contains("Check this"));
+        let mut more = Map::new();
+        more.insert("1".into(), Value::Null);
+        more.insert("2".into(), json!({ "author": "Bo", "initials": "B", "date": "", "text": "Second" }));
+        let next = merge_comments(Some(&fresh), &more);
+        let parsed = read_comments(next.as_bytes());
+        assert!(parsed.get("1").is_none());
+        assert_eq!(parsed["2"]["text"], "Second");
     }
 }

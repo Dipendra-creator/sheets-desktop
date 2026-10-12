@@ -1289,6 +1289,14 @@ const large: Record<string, Draw> = {
 
 export type IconName = string;
 
+/** Adds icons (Docs registers its own set). */
+export function registerIcons(more: { small?: Record<string, Draw>; large?: Record<string, Draw> }) {
+  Object.assign(small, more.small ?? {});
+  Object.assign(large, more.large ?? {});
+}
+
+export type { Draw as IconDraw };
+
 export function Icon({
   name,
   size = 16,

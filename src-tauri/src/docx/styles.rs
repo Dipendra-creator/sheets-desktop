@@ -486,6 +486,102 @@ pub static CATALOG: &[BuiltinStyle] = &[
         rpr: "",
         extra: "<w:tblPr><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/><w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/><w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"auto\"/></w:tblBorders></w:tblPr>",
     },
+    st("CommentReference", "annotation reference", "character", Some("DefaultParagraphFont"), None, Some(99), false, "", "<w:sz w:val=\"16\"/><w:szCs w:val=\"16\"/>"),
+    st(
+        "CommentText",
+        "annotation text",
+        "paragraph",
+        Some("Normal"),
+        None,
+        Some(99),
+        false,
+        "<w:spacing w:line=\"240\" w:lineRule=\"auto\"/>",
+        "<w:sz w:val=\"20\"/><w:szCs w:val=\"20\"/>",
+    ),
+    BuiltinStyle {
+        id: "PlainTable1",
+        name: "Plain Table 1",
+        kind: "table",
+        based_on: Some("TableNormal"),
+        next: None,
+        ui_priority: Some(41),
+        q_format: false,
+        semi_hidden: false,
+        default: false,
+        ppr: "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        rpr: "",
+        extra: "<w:tblPr><w:tblStyleRowBandSize w:val=\"1\"/><w:tblStyleColBandSize w:val=\"1\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\" w:themeColor=\"background1\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\" w:themeColor=\"background1\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\" w:themeColor=\"background1\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\" w:themeColor=\"background1\"/><w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\" w:themeColor=\"background1\"/><w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\" w:themeColor=\"background1\"/></w:tblBorders></w:tblPr><w:tblStylePr w:type=\"firstRow\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"lastRow\"><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"double\" w:sz=\"4\" w:space=\"0\" w:color=\"BFBFBF\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"firstCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"lastCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"band1Vert\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\" w:themeFill=\"background1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"band1Horz\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"F2F2F2\" w:themeFill=\"background1\"/></w:tcPr></w:tblStylePr>",
+    },
+    BuiltinStyle {
+        id: "GridTable1Light",
+        name: "Grid Table 1 Light",
+        kind: "table",
+        based_on: Some("TableNormal"),
+        next: None,
+        ui_priority: Some(46),
+        q_format: false,
+        semi_hidden: false,
+        default: false,
+        ppr: "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        rpr: "",
+        extra: "<w:tblPr><w:tblStyleRowBandSize w:val=\"1\"/><w:tblStyleColBandSize w:val=\"1\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"999999\" w:themeColor=\"text1\" w:themeTint=\"66\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"999999\" w:themeColor=\"text1\" w:themeTint=\"66\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"999999\" w:themeColor=\"text1\" w:themeTint=\"66\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"999999\" w:themeColor=\"text1\" w:themeTint=\"66\"/><w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"999999\" w:themeColor=\"text1\" w:themeTint=\"66\"/><w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"999999\" w:themeColor=\"text1\" w:themeTint=\"66\"/></w:tblBorders></w:tblPr><w:tblStylePr w:type=\"firstRow\"><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders><w:bottom w:val=\"single\" w:sz=\"12\" w:space=\"0\" w:color=\"666666\" w:themeColor=\"text1\" w:themeTint=\"99\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"lastRow\"><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"double\" w:sz=\"2\" w:space=\"0\" w:color=\"666666\" w:themeColor=\"text1\" w:themeTint=\"99\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"firstCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"lastCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr>",
+    },
+    BuiltinStyle {
+        id: "GridTable4-Accent1",
+        name: "Grid Table 4 Accent 1",
+        kind: "table",
+        based_on: Some("TableNormal"),
+        next: None,
+        ui_priority: Some(49),
+        q_format: false,
+        semi_hidden: false,
+        default: false,
+        ppr: "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        rpr: "",
+        extra: "<w:tblPr><w:tblStyleRowBandSize w:val=\"1\"/><w:tblStyleColBandSize w:val=\"1\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"45B0E1\" w:themeColor=\"accent1\" w:themeTint=\"99\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"45B0E1\" w:themeColor=\"accent1\" w:themeTint=\"99\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"45B0E1\" w:themeColor=\"accent1\" w:themeTint=\"99\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"45B0E1\" w:themeColor=\"accent1\" w:themeTint=\"99\"/><w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"45B0E1\" w:themeColor=\"accent1\" w:themeTint=\"99\"/><w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"45B0E1\" w:themeColor=\"accent1\" w:themeTint=\"99\"/></w:tblBorders></w:tblPr><w:tblStylePr w:type=\"firstRow\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tcBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"156082\" w:themeFill=\"accent1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"lastRow\"><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"double\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"firstCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"lastCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"band1Vert\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"C1E4F5\" w:themeFill=\"accent1\" w:themeFillTint=\"33\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"band1Horz\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"C1E4F5\" w:themeFill=\"accent1\" w:themeFillTint=\"33\"/></w:tcPr></w:tblStylePr>",
+    },
+    BuiltinStyle {
+        id: "GridTable4-Accent2",
+        name: "Grid Table 4 Accent 2",
+        kind: "table",
+        based_on: Some("TableNormal"),
+        next: None,
+        ui_priority: Some(49),
+        q_format: false,
+        semi_hidden: false,
+        default: false,
+        ppr: "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        rpr: "",
+        extra: "<w:tblPr><w:tblStyleRowBandSize w:val=\"1\"/><w:tblStyleColBandSize w:val=\"1\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"F1A983\" w:themeColor=\"accent2\" w:themeTint=\"99\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"F1A983\" w:themeColor=\"accent2\" w:themeTint=\"99\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"F1A983\" w:themeColor=\"accent2\" w:themeTint=\"99\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"F1A983\" w:themeColor=\"accent2\" w:themeTint=\"99\"/><w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"F1A983\" w:themeColor=\"accent2\" w:themeTint=\"99\"/><w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"F1A983\" w:themeColor=\"accent2\" w:themeTint=\"99\"/></w:tblBorders></w:tblPr><w:tblStylePr w:type=\"firstRow\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"E97132\" w:themeColor=\"accent2\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"E97132\" w:themeColor=\"accent2\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"E97132\" w:themeColor=\"accent2\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"E97132\" w:themeColor=\"accent2\"/><w:insideH w:val=\"nil\"/><w:insideV w:val=\"nil\"/></w:tcBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"E97132\" w:themeFill=\"accent2\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"lastRow\"><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"double\" w:sz=\"4\" w:space=\"0\" w:color=\"E97132\" w:themeColor=\"accent2\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"firstCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"lastCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"band1Vert\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"FAE2D5\" w:themeFill=\"accent2\" w:themeFillTint=\"33\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"band1Horz\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"FAE2D5\" w:themeFill=\"accent2\" w:themeFillTint=\"33\"/></w:tcPr></w:tblStylePr>",
+    },
+    BuiltinStyle {
+        id: "ListTable3-Accent1",
+        name: "List Table 3 Accent 1",
+        kind: "table",
+        based_on: Some("TableNormal"),
+        next: None,
+        ui_priority: Some(48),
+        q_format: false,
+        semi_hidden: false,
+        default: false,
+        ppr: "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        rpr: "",
+        extra: "<w:tblPr><w:tblStyleRowBandSize w:val=\"1\"/><w:tblStyleColBandSize w:val=\"1\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/></w:tblBorders></w:tblPr><w:tblStylePr w:type=\"firstRow\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"156082\" w:themeFill=\"accent1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"lastRow\"><w:rPr><w:b/><w:bCs/></w:rPr><w:tcPr><w:tcBorders><w:top w:val=\"double\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"firstCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"lastCol\"><w:rPr><w:b/><w:bCs/></w:rPr></w:tblStylePr><w:tblStylePr w:type=\"band1Vert\"><w:tcPr><w:tcBorders><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/></w:tcBorders></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"band1Horz\"><w:tcPr><w:tcBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"156082\" w:themeColor=\"accent1\"/></w:tcBorders></w:tcPr></w:tblStylePr>",
+    },
+    BuiltinStyle {
+        id: "GridTable5Dark-Accent1",
+        name: "Grid Table 5 Dark Accent 1",
+        kind: "table",
+        based_on: Some("TableNormal"),
+        next: None,
+        ui_priority: Some(50),
+        q_format: false,
+        semi_hidden: false,
+        default: false,
+        ppr: "<w:spacing w:after=\"0\" w:line=\"240\" w:lineRule=\"auto\"/>",
+        rpr: "",
+        extra: "<w:tblPr><w:tblStyleRowBandSize w:val=\"1\"/><w:tblStyleColBandSize w:val=\"1\"/><w:tblBorders><w:top w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"FFFFFF\" w:themeColor=\"background1\"/><w:left w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"FFFFFF\" w:themeColor=\"background1\"/><w:bottom w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"FFFFFF\" w:themeColor=\"background1\"/><w:right w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"FFFFFF\" w:themeColor=\"background1\"/><w:insideH w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"FFFFFF\" w:themeColor=\"background1\"/><w:insideV w:val=\"single\" w:sz=\"4\" w:space=\"0\" w:color=\"FFFFFF\" w:themeColor=\"background1\"/></w:tblBorders><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"C1E4F5\" w:themeFill=\"accent1\" w:themeFillTint=\"33\"/></w:tblPr><w:tblStylePr w:type=\"firstRow\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"156082\" w:themeFill=\"accent1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"lastRow\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"156082\" w:themeFill=\"accent1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"firstCol\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"156082\" w:themeFill=\"accent1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"lastCol\"><w:rPr><w:b/><w:bCs/><w:color w:val=\"FFFFFF\" w:themeColor=\"background1\"/></w:rPr><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"156082\" w:themeFill=\"accent1\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"band1Vert\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"83CAEB\" w:themeFill=\"accent1\" w:themeFillTint=\"66\"/></w:tcPr></w:tblStylePr><w:tblStylePr w:type=\"band1Horz\"><w:tcPr><w:shd w:val=\"clear\" w:color=\"auto\" w:fill=\"83CAEB\" w:themeFill=\"accent1\" w:themeFillTint=\"66\"/></w:tcPr></w:tblStylePr>",
+    },
 ];
 
 /// `styles.xml` of a new document.
@@ -545,5 +641,19 @@ mod tests {
         assert!(text.contains("w:styleId=\"Heading4\""));
         assert!(text.ends_with("</w:styles>"));
         assert!(add_missing_styles(text.as_bytes(), &used).is_none());
+    }
+
+    #[test]
+    fn catalog_parses() {
+        let all = catalog_json();
+        assert_eq!(all.len(), CATALOG.len(), "every built-in style parses");
+        let grid4 = all.iter().find(|s| s["id"] == "GridTable4-Accent1").unwrap();
+        assert_eq!(grid4["type"], "table");
+        assert!(grid4["conditional"]["firstRow"]["tcPr"]["shd"].is_object());
+        assert!(grid4["tblPr"]["tblBorders"]["insideH"].is_object());
+        let used: BTreeSet<String> = ["GridTable4-Accent1".to_string(), "CommentText".to_string()].into();
+        let out = String::from_utf8(add_missing_styles(default_styles_xml().as_bytes(), &used).unwrap()).unwrap();
+        assert!(out.contains("w:styleId=\"GridTable4-Accent1\"") && out.contains("w:styleId=\"CommentText\""));
+        assert!(crate::docx::xml::parse(&out).is_ok());
     }
 }
