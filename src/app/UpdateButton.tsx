@@ -133,7 +133,7 @@ export function UpdateButton() {
             {active ? (
               <>
                 <div className="up-head">
-                  <Icon name="logo" size={32} />
+                  <Icon name={APP_NAME === "Docs" ? "appDocs" : "logo"} size={32} />
                   <div>
                     <b>
                       {s.phase === "ready"
@@ -210,7 +210,7 @@ export function UpdateButton() {
             ) : (
               <>
                 <div className="up-head">
-                  <Icon name="logo" size={32} />
+                  <Icon name={APP_NAME === "Docs" ? "appDocs" : "logo"} size={32} />
                   <div>
                     <b>
                       {APP_NAME} was updated to {s.current}

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Docs: a blue page of text with a badge, matching the Sheets icon -->
+  <path d="M168 52h264a28 28 0 0 1 28 28v352a28 28 0 0 1-28 28H168a28 28 0 0 1-28-28V80a28 28 0 0 1 28-28z" fill="#41A5EE"/>
+  <path d="M168 52h264a28 28 0 0 1 28 28v88H140V80a28 28 0 0 1 28-28z" fill="#2B7CD3"/>
+  <rect x="140" y="168" width="320" height="104" fill="#41A5EE"/>
+  <rect x="140" y="272" width="320" height="94" fill="#2B7CD3"/>
+  <path d="M140 366h320v66a28 28 0 0 1-28 28H168a28 28 0 0 1-28-28z" fill="#185ABD"/>
+  <path d="M300 104h120M300 220h120M300 318h120M300 412h86" stroke="#fff" stroke-opacity=".35" stroke-width="14" stroke-linecap="round"/>
+  <rect x="36" y="136" width="240" height="240" rx="26" fill="#103F91"/>
+  <rect x="84" y="196" width="144" height="24" rx="12" fill="#fff"/>
+  <rect x="84" y="244" width="144" height="24" rx="12" fill="#fff"/>
+  <rect x="84" y="292" width="98" height="24" rx="12" fill="#fff"/>
+</svg>

@@ -22,7 +22,7 @@ function RecoveryPanel({ kind, title, text }: { kind: "crashed" | "unsaved"; tit
   const app = useApp();
   const [items, setItems] = useState<RecoveryItem[]>([]);
   // Workbooks kept while Sheets restarted into an update join the crash list
-  const matches = (i: RecoveryItem) => i.kind === kind || (kind === "crashed" && i.kind === "updated");
+  const matches = (i: RecoveryItem) => i.app !== "docs" && (i.kind === kind || (kind === "crashed" && i.kind === "updated"));
   useEffect(() => {
     api
       .recoveryList()

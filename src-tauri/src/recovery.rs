@@ -1,9 +1,9 @@
 //! AutoRecover and version history — the safety nets Excel users most often
 //! find missing when it matters.
 //!
-//! * **Live snapshots.** Every workbook with unsaved changes (including ones
-//!   that were never saved) is written to `recovery/live/<id>.xlsx` a few
-//!   seconds after it changes. A clean save or close deletes the snapshot, so
+//! * **Live snapshots.** Every workbook or document with unsaved changes
+//!   (including ones that were never saved) is written to
+//!   `recovery/live/<id>.xlsx` (or `.docx`) a few seconds after it changes. A clean save or close deletes the snapshot, so
 //!   whatever is left in `live/` at startup belongs to a session that crashed;
 //!   those files move to `recovery/crashed/` and are offered on the start page.
 //! * **Unsaved workbooks.** Choosing "Don't Save" keeps the last state in
@@ -51,11 +51,22 @@ pub struct SnapshotMeta {
     pub reason: Option<String>,
 }
 
+/// File types the recovery folders hold: workbooks and documents.
+pub const SNAPSHOT_EXTS: &[&str] = &["xlsx", "docx"];
+
+fn is_snapshot(path: &Path) -> bool {
+    path.extension()
+        .map(|e| SNAPSHOT_EXTS.iter().any(|x| e.eq_ignore_ascii_case(x)))
+        .unwrap_or(false)
+}
+
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct RecoveryItem {
-    /// Full path of the snapshot (.xlsx).
+    /// Full path of the snapshot (.xlsx or .docx).
     pub file: String,
+    /// "sheets" | "docs"
+    pub app: String,
     pub title: String,
     pub original_path: Option<String>,
     pub saved_at: u64,
@@ -133,46 +144,53 @@ impl RecoveryStore {
         self.snaps.lock().unwrap().contains_key(id)
     }
 
-    fn write_pair(dir: &Path, id: &str, meta: &SnapshotMeta, bytes: &[u8]) -> AppResult<()> {
-        write_atomic(&dir.join(format!("{id}.xlsx")), bytes)?;
+    /// Writes `<id>.<ext>` and its `<id>.json` metadata. `ext` is the
+    /// snapshot's file type ("xlsx" or "docx").
+    fn write_pair(dir: &Path, id: &str, ext: &str, meta: &SnapshotMeta, bytes: &[u8]) -> AppResult<()> {
+        write_atomic(&dir.join(format!("{id}.{ext}")), bytes)?;
         let json = serde_json::to_vec(meta).unwrap_or_default();
         write_atomic(&dir.join(format!("{id}.json")), &json)?;
         Ok(())
     }
 
-    pub fn write_live(&self, id: &str, seq: u64, meta: &SnapshotMeta, bytes: &[u8]) -> AppResult<()> {
-        Self::write_pair(&self.live, id, meta, bytes)?;
+    fn remove_pair(dir: &Path, id: &str) {
+        for ext in SNAPSHOT_EXTS {
+            let _ = fs::remove_file(dir.join(format!("{id}.{ext}")));
+        }
+        let _ = fs::remove_file(dir.join(format!("{id}.json")));
+    }
+
+    pub fn write_live(&self, id: &str, ext: &str, seq: u64, meta: &SnapshotMeta, bytes: &[u8]) -> AppResult<()> {
+        Self::write_pair(&self.live, id, ext, meta, bytes)?;
         self.snaps.lock().unwrap().insert(id.to_string(), Snap { seq, at: Instant::now() });
         Ok(())
     }
 
-    /// The workbook was saved or closed cleanly: its live snapshot is obsolete.
+    /// The file was saved or closed cleanly: its live snapshot is obsolete.
     pub fn discard_live(&self, id: &str) {
         if self.snaps.lock().unwrap().remove(id).is_some() {
-            let _ = fs::remove_file(self.live.join(format!("{id}.xlsx")));
-            let _ = fs::remove_file(self.live.join(format!("{id}.json")));
+            Self::remove_pair(&self.live, id);
         }
     }
 
     /// Closed with "Don't Save": keep the last state for a few days.
-    pub fn keep_unsaved(&self, id: &str, meta: &SnapshotMeta, bytes: &[u8]) {
-        let _ = Self::write_pair(&self.unsaved, id, meta, bytes);
+    pub fn keep_unsaved(&self, id: &str, ext: &str, meta: &SnapshotMeta, bytes: &[u8]) {
+        let _ = Self::write_pair(&self.unsaved, id, ext, meta, bytes);
         self.discard_live(id);
     }
 
-    /// Sheets is restarting to install an update: keep the workbook so the
+    /// The app is restarting to install an update: keep the file so the
     /// start screen offers it again (like a crash, but labelled as an update).
-    pub fn keep_for_restart(&self, id: &str, meta: &SnapshotMeta, bytes: &[u8]) -> AppResult<()> {
+    pub fn keep_for_restart(&self, id: &str, ext: &str, meta: &SnapshotMeta, bytes: &[u8]) -> AppResult<()> {
         let meta = SnapshotMeta { reason: Some("update".into()), ..meta.clone() };
-        Self::write_pair(&self.crashed, id, &meta, bytes)?;
+        Self::write_pair(&self.crashed, id, ext, &meta, bytes)?;
         self.discard_live(id);
         Ok(())
     }
 
     /// The update was not installed after all: forget what was kept for it.
     pub fn forget_restart(&self, id: &str) {
-        let _ = fs::remove_file(self.crashed.join(format!("{id}.xlsx")));
-        let _ = fs::remove_file(self.crashed.join(format!("{id}.json")));
+        Self::remove_pair(&self.crashed, id);
     }
 
     pub fn list(&self) -> Vec<RecoveryItem> {
@@ -181,9 +199,10 @@ impl RecoveryStore {
             let Ok(entries) = fs::read_dir(dir) else { continue };
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().map(|e| e != "xlsx").unwrap_or(true) {
+                if !is_snapshot(&path) {
                     continue;
                 }
+                let docs = path.extension().map(|e| e.eq_ignore_ascii_case("docx")).unwrap_or(false);
                 let meta: SnapshotMeta = fs::read(path.with_extension("json"))
                     .ok()
                     .and_then(|b| serde_json::from_slice(&b).ok())
@@ -191,7 +210,14 @@ impl RecoveryStore {
                 let fs_meta = entry.metadata().ok();
                 out.push(RecoveryItem {
                     file: path.to_string_lossy().to_string(),
-                    title: if meta.title.is_empty() { "Workbook".into() } else { meta.title },
+                    app: if docs { "docs" } else { "sheets" }.to_string(),
+                    title: if !meta.title.is_empty() {
+                        meta.title
+                    } else if docs {
+                        "Document".into()
+                    } else {
+                        "Workbook".into()
+                    },
                     original_path: meta.original_path,
                     saved_at: if meta.saved_at > 0 {
                         meta.saved_at
@@ -210,8 +236,7 @@ impl RecoveryStore {
     /// Only files inside the recovery folders may be opened or deleted.
     pub fn owns(&self, file: &Path) -> bool {
         let parent = file.parent().map(|p| p.to_path_buf()).unwrap_or_default();
-        (parent == self.crashed || parent == self.unsaved)
-            && file.extension().map(|e| e == "xlsx").unwrap_or(false)
+        (parent == self.crashed || parent == self.unsaved) && is_snapshot(file)
     }
 
     pub fn remove_item(&self, file: &Path) {
@@ -227,7 +252,8 @@ impl RecoveryStore {
         if !self.owns(file) {
             return Ok(());
         }
-        let target = self.live.join(format!("{new_id}.xlsx"));
+        let ext = file.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_else(|| "xlsx".into());
+        let target = self.live.join(format!("{new_id}.{ext}"));
         if fs::rename(file, &target).is_err() {
             fs::copy(file, &target)?;
             let _ = fs::remove_file(file);
@@ -315,7 +341,7 @@ impl VersionStore {
         }
         let ext = path
             .extension()
-            .map(|e| e.to_string_lossy().to_string())
+            .map(|e| e.to_string_lossy().to_lowercase())
             .unwrap_or_else(|| "xlsx".into());
         let stamp = match mtime_ms(&meta) {
             0 => now_ms(),
@@ -375,13 +401,22 @@ mod tests {
         let dir = temp_dir("recovery");
         {
             let store = RecoveryStore::new(&dir);
-            store.write_live("abc", 1, &snapshot_meta("Budget", None), b"data").unwrap();
+            store.write_live("abc", "xlsx", 1, &snapshot_meta("Budget", None), b"data").unwrap();
+            store.write_live("doc", "docx", 1, &snapshot_meta("Letter", None), b"text").unwrap();
             // no clean shutdown: the store is simply dropped
         }
         let store = RecoveryStore::new(&dir);
-        let items = store.list();
-        assert_eq!(items.len(), 1);
+        let mut items = store.list();
+        assert_eq!(items.len(), 2);
+        items.sort_by(|a, b| a.title.cmp(&b.title));
+        let letter = items.remove(1);
+        assert_eq!((letter.title.as_str(), letter.app.as_str()), ("Letter", "docs"));
+        store.adopt(Path::new(&letter.file), "newdoc", 2, &snapshot_meta("Letter", None)).unwrap();
+        assert!(dir.join("recovery/live/newdoc.docx").exists());
+        store.discard_live("newdoc");
+        assert!(!dir.join("recovery/live/newdoc.docx").exists());
         assert_eq!(items[0].title, "Budget");
+        assert_eq!(items[0].app, "sheets");
         assert_eq!(items[0].kind, "crashed");
         let file = PathBuf::from(&items[0].file);
         store.adopt(&file, "new", 3, &snapshot_meta("Budget", None)).unwrap();
@@ -397,12 +432,12 @@ mod tests {
         let dir = temp_dir("update-restart");
         {
             let store = RecoveryStore::new(&dir);
-            store.write_live("abc", 1, &snapshot_meta("Budget", None), b"old").unwrap();
-            store.keep_for_restart("abc", &snapshot_meta("Budget", None), b"new").unwrap();
+            store.write_live("abc", "xlsx", 1, &snapshot_meta("Budget", None), b"old").unwrap();
+            store.keep_for_restart("abc", "xlsx", &snapshot_meta("Budget", None), b"new").unwrap();
             // the live snapshot was replaced, so it is not offered twice
             assert!(!dir.join("recovery/live/abc.xlsx").exists());
-            store.write_live("def", 1, &snapshot_meta("Plan", None), b"x").unwrap();
-            store.keep_for_restart("def", &snapshot_meta("Plan", None), b"y").unwrap();
+            store.write_live("def", "docx", 1, &snapshot_meta("Plan", None), b"x").unwrap();
+            store.keep_for_restart("def", "docx", &snapshot_meta("Plan", None), b"y").unwrap();
             store.forget_restart("def");
         }
         let store = RecoveryStore::new(&dir);

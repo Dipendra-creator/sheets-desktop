@@ -1,13 +1,14 @@
 import { useState } from "react";
 import type { Settings } from "../api";
 import { Dialog } from "../components/Dialog";
+import { APP_NAME } from "./context";
 import { FONTS, SIZES } from "../lib/fonts";
 
 export function OptionsDialog({ settings, onSave, onClose }: { settings: Settings; onSave: (s: Settings) => void; onClose: () => void }) {
   const [s, setS] = useState<Settings>(settings);
   return (
     <Dialog
-      title="Sheets Options"
+      title={`${APP_NAME} Options`}
       width={520}
       onClose={onClose}
       onSubmit={() => {
@@ -84,7 +85,7 @@ export function OptionsDialog({ settings, onSave, onClose }: { settings: Setting
         <h3>Updates</h3>
         <label className="fc-row check">
           <input type="checkbox" checked={s.checkUpdates} onChange={(e) => setS({ ...s, checkUpdates: e.target.checked })} />
-          Check for new versions of Sheets automatically (a button appears in the title bar when one is available)
+          Check for new versions automatically (a button appears in the title bar when one is available)
         </label>
         <h3>Save</h3>
         <label className="fc-row">

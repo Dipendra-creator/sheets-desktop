@@ -15,7 +15,7 @@ use crate::{
     error::{AppError, AppResult},
 };
 
-pub use file::{write_atomic, FileStore};
+pub use file::{decode_text, write_atomic, FileStore};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum FileFormat {

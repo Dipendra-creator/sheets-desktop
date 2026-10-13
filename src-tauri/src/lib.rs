@@ -1,7 +1,9 @@
-//! Sheets — lightweight spreadsheet desktop app.
+//! Sheets and Docs — a lightweight spreadsheet and word processor in one app.
 //!
 //! Layers:
 //! * `engine`    – workbook sessions on top of the IronCalc engine
+//! * `docx`      – Word documents ⇄ the editor's document model
+//! * `docs`      – open documents (sessions, formats, templates)
 //! * `storage`   – loading/saving (files today, database later)
 //! * `templates` – template providers (built-in today, remote later)
 //! * `sync`      – change stream hook for future database synchronisation
@@ -9,6 +11,8 @@
 //! * `updates`   – in-app updates (signed releases from GitHub)
 
 mod commands;
+mod docs;
+mod docx;
 mod engine;
 mod error;
 mod recent;
@@ -25,7 +29,7 @@ use std::time::Duration;
 
 use tauri::Manager;
 
-use commands::{app, cells, features, sheet, workbook};
+use commands::{app, cells, document, features, sheet, workbook};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -38,8 +42,11 @@ pub fn run() {
             .iter()
             .skip(1)
             .find(|a| !a.starts_with('-') && std::path::Path::new(a).is_file());
+        let docs = argv.iter().any(|a| a == "--docs");
         match file {
             Some(f) => app::deliver_open(handle, f.clone()),
+            None if docs => app::focus_or_open(handle, state::AppKind::Docs),
+            None if argv.iter().any(|a| a == "--sheets") => app::focus_or_open(handle, state::AppKind::Sheets),
             None => app::focus_any_window(handle),
         }
     }));
@@ -48,6 +55,8 @@ pub fn run() {
     builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        // Pictures of open documents for the editor
+        .register_uri_scheme_protocol("docmedia", document::media_protocol)
         .setup(|app| {
             let config_dir = app.path().app_config_dir()?;
             let data_dir = app.path().app_local_data_dir().unwrap_or_else(|_| config_dir.clone());
@@ -70,7 +79,7 @@ pub fn run() {
             }
             #[cfg(not(desktop))]
             let _ = updated_from;
-            // AutoRecover: snapshot changed workbooks in the background.
+            // AutoRecover: snapshot changed workbooks and documents in the background.
             let handle = app.handle().clone();
             std::thread::spawn(move || loop {
                 std::thread::sleep(Duration::from_secs(5));
@@ -112,6 +121,29 @@ pub fn run() {
             app::focus_book,
             app::open_book_window,
             app::list_book_windows,
+            app::window_doc,
+            app::window_kind,
+            app::open_doc_window,
+            app::open_app_window,
+            app::open_in_app,
+            app::list_doc_windows,
+            document::document_new,
+            document::document_open,
+            document::document_info,
+            document::document_payload,
+            document::document_update,
+            document::document_save,
+            document::document_save_as,
+            document::document_export,
+            document::document_write_html,
+            document::document_close,
+            document::document_format_lossy,
+            document::document_add_image,
+            document::document_add_image_data,
+            document::document_templates,
+            document::document_template_preview,
+            document::document_recovery_open,
+            document::document_version_open,
             features::note_set,
             features::notes_delete,
             features::notes_list,

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Docs
+Comment=Write and edit Word documents
+Exec=sheets --docs %F
+Icon=sheets-docs
+Terminal=false
+Categories=Office;WordProcessor;
+MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/vnd.ms-word.document.macroEnabled.12;application/vnd.openxmlformats-officedocument.wordprocessingml.template;
+StartupWMClass=sheets

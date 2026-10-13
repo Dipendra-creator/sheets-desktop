@@ -104,7 +104,7 @@ function labelOf(el: HTMLElement): string {
 }
 
 /** Assigns unique KeyTips to the buttons of the open ribbon tab. */
-function controlTips(): Tip[] {
+function controlTips(KNOWN: [string, string][]): Tip[] {
   const root = document.querySelector(".ribbon-content");
   if (!root) return [];
   const els = Array.from(root.querySelectorAll<HTMLElement>("button, input, select")).filter(
@@ -164,13 +164,16 @@ function controlTips(): Tip[] {
     });
 }
 
-function tabTips(): Tip[] {
+function tabTips(tabKeys: Record<string, string>): Tip[] {
   return Array.from(document.querySelectorAll<HTMLElement>(".ribbon-tabs .ribbon-tab")).map((el) => {
     const r = el.getBoundingClientRect();
-    return { el, keys: TAB_KEYS[el.textContent?.trim() ?? ""] ?? "", x: r.left + r.width / 2, y: r.bottom - 4 };
+    return { el, keys: tabKeys[el.textContent?.trim() ?? ""] ?? "", x: r.left + r.width / 2, y: r.bottom - 4 };
   });
 }
 
+export type KeyTipLevel = "tabs" | "controls" | null;
+
+/** Sheets' KeyTips (Excel's letters). */
 export function KeyTips({
   ctl,
   tab,
@@ -183,34 +186,68 @@ export function KeyTips({
   onFile: () => void;
 }) {
   const level = useCtl(ctl, (c) => c.keyTips);
+  return (
+    <KeyTipsLayer
+      level={level}
+      setLevel={(l) => ctl.setKeyTips(l)}
+      focusContent={() => ctl.ui?.focusGrid()}
+      tab={tab}
+      tabKeys={TAB_KEYS}
+      known={KNOWN}
+      onTab={onTab}
+      onFile={onFile}
+    />
+  );
+}
+
+/** KeyTips for any ribbon: letters on the tabs, then on the open tab's buttons. */
+export function KeyTipsLayer({
+  level,
+  setLevel,
+  focusContent,
+  tab,
+  tabKeys,
+  known,
+  onTab,
+  onFile,
+}: {
+  level: KeyTipLevel;
+  setLevel: (level: KeyTipLevel) => void;
+  focusContent: () => void;
+  tab: string;
+  tabKeys: Record<string, string>;
+  known: [string, string][];
+  onTab: (tab: string) => void;
+  onFile: () => void;
+}) {
   const [typed, setTyped] = useState("");
   const [tips, setTips] = useState<Tip[]>([]);
 
   useLayoutEffect(() => {
     setTyped("");
-    if (level === "tabs") setTips(tabTips());
+    if (level === "tabs") setTips(tabTips(tabKeys));
     else if (level === "controls") {
       // The tab's buttons render on the next frame
-      const id = requestAnimationFrame(() => setTips(controlTips()));
+      const id = requestAnimationFrame(() => setTips(controlTips(known)));
       return () => cancelAnimationFrame(id);
     } else setTips([]);
   }, [level, tab]);
 
   useEffect(() => {
     if (!level) return;
-    const close = () => ctl.setKeyTips(null);
+    const close = () => setLevel(null);
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Alt" || e.key === "Shift" || e.key === "Control" || e.key === "Meta") return;
       e.preventDefault();
       e.stopPropagation();
       if (e.key === "Escape") {
-        ctl.setKeyTips(level === "controls" ? "tabs" : null);
-        if (level === "tabs") ctl.ui?.focusGrid();
+        setLevel(level === "controls" ? "tabs" : null);
+        if (level === "tabs") focusContent();
         return;
       }
       if (e.key === "F10") {
         close();
-        ctl.ui?.focusGrid();
+        focusContent();
         return;
       }
       if (e.key.length !== 1) return;
@@ -229,7 +266,7 @@ export function KeyTips({
           onFile();
         } else {
           onTab(name);
-          ctl.setKeyTips("controls");
+          setLevel("controls");
         }
         return;
       }
@@ -248,7 +285,7 @@ export function KeyTips({
       window.removeEventListener("mousedown", onDown, true);
       window.removeEventListener("blur", onDown);
     };
-  }, [level, tips, typed, ctl, onFile, onTab]);
+  }, [level, tips, typed, onFile, onTab, setLevel, focusContent]);
 
   if (!level || !tips.length) return null;
   return createPortal(

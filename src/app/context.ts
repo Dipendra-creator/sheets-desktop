@@ -37,4 +37,9 @@ export function useApp(): AppApi {
   return ctx;
 }
 
-export const APP_NAME = "Sheets";
+/** The app this window shows ("Sheets" or "Docs"), set at startup. */
+export let APP_NAME = "Sheets";
+
+export function setAppName(name: string) {
+  APP_NAME = name;
+}

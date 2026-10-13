@@ -5,10 +5,21 @@ import { Icon } from "../components/Icon";
 import { Menu } from "../components/Menu";
 import { friendlyDate } from "../lib/formats";
 
-export function RecentList({ filter, limit, emptyText }: { filter?: "pinned"; limit?: number; emptyText?: string }) {
+function iconFor(name: string): string {
+  const n = name.toLowerCase();
+  if (/\.(docx|docm|dotx|dotm|md|markdown)$/.test(n)) return "docx";
+  if (/\.(csv|tsv|txt)$/.test(n)) return "csv";
+  return "xlsx";
+}
+
+export function RecentList({ filter, limit, emptyText, query }: { filter?: "pinned"; limit?: number; emptyText?: string; query?: string }) {
   const app = useApp();
   const [menu, setMenu] = useState<{ x: number; y: number; item: RecentItem } | null>(null);
   let items = app.recent;
+  if (query?.trim()) {
+    const q = query.trim().toLowerCase();
+    items = items.filter((i) => i.name.toLowerCase().includes(q) || i.folder.toLowerCase().includes(q));
+  }
   if (filter === "pinned") items = items.filter((i) => i.pinned);
   else items = [...items.filter((i) => i.pinned), ...items.filter((i) => !i.pinned)];
   if (limit) items = items.slice(0, limit);
@@ -16,7 +27,7 @@ export function RecentList({ filter, limit, emptyText }: { filter?: "pinned"; li
   const open = async (item: RecentItem) => {
     if (!item.exists) {
       const answer = await app.ask(
-        "Sheets",
+        app.info.name,
         `Sorry, we couldn't find ${item.path}. Is it possible it was moved, renamed or deleted?\n\nRemove it from the list?`,
         [
           { label: "Remove", value: "remove", primary: true },
@@ -64,7 +75,7 @@ export function RecentList({ filter, limit, emptyText }: { filter?: "pinned"; li
           title={item.path}
         >
           <span className="rt-icon">
-            <Icon name={item.name.toLowerCase().endsWith(".csv") ? "csv" : "xlsx"} size={24} />
+            <Icon name={iconFor(item.name)} size={24} />
           </span>
           <span className="rt-name">
             <span className="rt-file">{item.name}</span>

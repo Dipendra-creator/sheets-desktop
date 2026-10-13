@@ -228,6 +228,8 @@ export interface HealthReport {
 
 export interface RecoveryItem {
   file: string;
+  /** The app the snapshot belongs to. */
+  app: "sheets" | "docs";
   title: string;
   originalPath: string | null;
   savedAt: number;
@@ -357,7 +359,9 @@ export interface UpdateStatus {
 }
 
 export interface AppInfo {
+  /** "Sheets" or "Docs": the app this window shows. */
   name: string;
+  app: "sheets" | "docs";
   version: string;
   userName: string;
   initials: string;

@@ -68,8 +68,8 @@ export const updates = {
     const unsaved = await api.updateUnsaved().catch(() => [] as string[]);
     const list = unsaved.slice(0, 6).map((t) => `• ${t}`).join("\n") + (unsaved.length > 6 ? `\n• …and ${unsaved.length - 6} more` : "");
     const message = unsaved.length
-      ? `Sheets will close and restart to install version ${version}.\n\nThese workbooks have unsaved changes:\n${list}\n\nThey are kept safely and offered again on the start screen right after the restart.`
-      : `Sheets will close and restart to install version ${version}.`;
+      ? `Sheets and Docs will close and restart to install version ${version}.\n\nThese files have unsaved changes:\n${list}\n\nThey are kept safely and offered again on the start screen right after the restart.`
+      : `Sheets and Docs will close and restart to install version ${version}.`;
     const answer = await ask("Restart to update", message, [
       { label: "Restart and update", value: "ok", primary: true },
       { label: "Not now", value: "cancel" },
@@ -84,7 +84,7 @@ export const updates = {
       if (s.phase === "available" || s.phase === "ready" || s.phase === "downloading") {
         for (const fn of panelListeners) fn();
       } else if (s.phase === "upToDate") {
-        await ask("Check for Updates", `You're up to date. Sheets ${s.current} is the newest version.`, [{ label: "OK", value: "ok", primary: true }], "infoCircle");
+        await ask("Check for Updates", `You're up to date. Version ${s.current} is the newest version.`, [{ label: "OK", value: "ok", primary: true }], "infoCircle");
       } else if (s.phase === "error") {
         await ask("Check for Updates", s.error ?? "Couldn't check for updates.", [{ label: "OK", value: "ok", primary: true }], "warning");
       }

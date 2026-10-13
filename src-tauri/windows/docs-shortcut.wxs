@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MSI: Docs gets its own Start menu entry (the same program, opened in Docs). -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <Icon Id="DocsIcon.ico" SourceFile="$(sys.SOURCEFILEDIR)..\icons\docs\docs.ico" />
+    <DirectoryRef Id="ApplicationProgramsFolder">
+      <Component Id="DocsStartMenuShortcut" Guid="*">
+        <Shortcut Id="DocsShortcut"
+                  Name="Docs"
+                  Description="Write and edit Word documents"
+                  Target="[!Path]"
+                  Arguments="--docs"
+                  Icon="DocsIcon.ico"
+                  WorkingDirectory="INSTALLDIR" />
+        <RegistryValue Root="HKCU" Key="Software\Dipendra Bhardwaj\Sheets" Name="Docs Shortcut" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

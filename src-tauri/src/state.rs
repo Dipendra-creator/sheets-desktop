@@ -10,6 +10,7 @@ use std::{
 };
 
 use crate::{
+    docs::DocSession,
     engine::{ClipboardPayload, EngineConfig, Session},
     error::{AppError, AppResult},
     recent::RecentStore,
@@ -21,6 +22,65 @@ use crate::{
 };
 
 pub type SharedSession = Arc<Mutex<Session>>;
+pub type SharedDoc = Arc<Mutex<DocSession>>;
+
+/// The apps of the suite. Every window shows one of them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AppKind {
+    Sheets,
+    Docs,
+}
+
+impl AppKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            AppKind::Sheets => "sheets",
+            AppKind::Docs => "docs",
+        }
+    }
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            AppKind::Sheets => "Sheets",
+            AppKind::Docs => "Docs",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<AppKind> {
+        match s {
+            "sheets" => Some(AppKind::Sheets),
+            "docs" => Some(AppKind::Docs),
+            _ => None,
+        }
+    }
+
+    /// The app that opens a file (by extension). Plain text opens in Sheets
+    /// unless Docs is the app asking.
+    pub fn for_path(path: &str, text_app: AppKind) -> AppKind {
+        let ext = Path::new(path)
+            .extension()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase())
+            .unwrap_or_default();
+        match ext.as_str() {
+            "docx" | "docm" | "dotx" | "dotm" | "doc" | "dot" | "md" | "markdown" | "rtf" | "odt" => AppKind::Docs,
+            "txt" | "text" => text_app,
+            _ => AppKind::Sheets,
+        }
+    }
+
+    /// The app a window shows, from its label: "book-…" and "start-sheets-…"
+    /// are Sheets, "doc-…" and "start-docs-…" are Docs, and the first
+    /// window shows the app the program was started for.
+    pub fn for_window(label: &str, startup: AppKind) -> AppKind {
+        if label.starts_with("doc-") || label.starts_with("start-docs") {
+            AppKind::Docs
+        } else if label.starts_with("book-") || label.starts_with("start-sheets") {
+            AppKind::Sheets
+        } else {
+            startup
+        }
+    }
+}
 
 pub struct AppState {
     config: RwLock<EngineConfig>,
@@ -36,8 +96,17 @@ pub struct AppState {
     book_counter: AtomicU32,
     /// File passed on the command line (e.g. "Open with").
     pub startup_file: Mutex<Option<String>>,
+    /// The app the program was started for (`--docs`, or the file's type).
+    pub startup_app: AppKind,
+    /// The app the first window ("main") shows.
+    pub main_app: Mutex<AppKind>,
+    /// Files to open in windows created for them (window label → path).
+    pub window_files: Mutex<HashMap<String, String>>,
     pub recovery: RecoveryStore,
     pub versions: VersionStore,
+    docs: Mutex<HashMap<String, SharedDoc>>,
+    doc_counter: AtomicU32,
+    window_counter: AtomicU32,
 }
 
 /// Month-first dates are mostly used in the Americas; default by timezone.
@@ -70,9 +139,17 @@ impl AppState {
             preserve_literals: settings.value.preserve_literals,
             csv_bom: settings.value.csv_bom,
         };
-        let startup_file = std::env::args()
-            .skip(1)
-            .find(|a| !a.starts_with('-') && Path::new(a).is_file());
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let startup_file = args.iter().find(|a| !a.starts_with('-') && Path::new(a).is_file()).cloned();
+        let flag = if args.iter().any(|a| a == "--docs") {
+            AppKind::Docs
+        } else {
+            AppKind::Sheets
+        };
+        let startup_app = match &startup_file {
+            Some(f) => AppKind::for_path(f, flag),
+            None => flag,
+        };
         AppState {
             config: RwLock::new(config),
             sessions: Mutex::new(HashMap::new()),
@@ -85,9 +162,24 @@ impl AppState {
             clipboard: Mutex::new(None),
             book_counter: AtomicU32::new(0),
             startup_file: Mutex::new(startup_file),
+            startup_app,
+            main_app: Mutex::new(startup_app),
+            window_files: Mutex::new(HashMap::new()),
             recovery: RecoveryStore::new(data_dir),
             versions: VersionStore::new(data_dir),
+            docs: Mutex::new(HashMap::new()),
+            doc_counter: AtomicU32::new(0),
+            window_counter: AtomicU32::new(0),
         }
+    }
+
+    /// A unique number for new window labels.
+    pub fn next_window_number(&self) -> u32 {
+        self.window_counter.fetch_add(1, Ordering::SeqCst) + 1
+    }
+
+    pub fn author(&self) -> String {
+        self.settings.lock().unwrap().value.user_name.clone()
     }
 
     pub fn config(&self) -> EngineConfig {
@@ -134,7 +226,7 @@ impl AppState {
                 if s.dirty && !s.untouched && s.edit_seq > 0 {
                     if let Ok(bytes) = snapshot_bytes(&s) {
                         let meta = snapshot_meta(&s.title, s.location.as_ref().map(|l| l.path.to_string_lossy().to_string()));
-                        self.recovery.keep_unsaved(id, &meta, &bytes);
+                        self.recovery.keep_unsaved(id, "xlsx", &meta, &bytes);
                     }
                 }
             }
@@ -183,11 +275,14 @@ impl AppState {
         self.sessions.lock().unwrap().contains_key(&book).then_some(book)
     }
 
+    /// Windows showing workbooks: (window label, workbook id).
     pub fn bound_windows(&self) -> Vec<(String, String)> {
+        let sessions = self.sessions.lock().unwrap();
         self.windows
             .lock()
             .unwrap()
             .iter()
+            .filter(|(_, b)| sessions.contains_key(*b))
             .map(|(l, b)| (l.clone(), b.clone()))
             .collect()
     }
@@ -201,11 +296,22 @@ impl AppState {
             .map(|(l, _)| l.clone())
     }
 
-    /// A window was destroyed: close the workbook it was showing.
+    /// The document bound to a window, if it is still open.
+    pub fn doc_of_window(&self, label: &str) -> Option<String> {
+        let id = self.windows.lock().unwrap().get(label).cloned()?;
+        self.docs.lock().unwrap().contains_key(&id).then_some(id)
+    }
+
+    /// A window was destroyed: close the workbook or document it was showing.
     pub fn window_destroyed(&self, label: &str) {
-        let book = self.windows.lock().unwrap().remove(label);
-        if let Some(book) = book {
-            self.remove(&book);
+        self.window_files.lock().unwrap().remove(label);
+        let id = self.windows.lock().unwrap().remove(label);
+        if let Some(id) = id {
+            if self.docs.lock().unwrap().contains_key(&id) {
+                self.remove_doc(&id);
+            } else {
+                self.remove(&id);
+            }
         }
     }
 
@@ -252,6 +358,14 @@ impl AppState {
                 (s.dirty && !s.untouched).then(|| s.title.clone())
             })
             .collect();
+        drop(sessions);
+        for (_, shared) in self.doc_list() {
+            if let Ok(d) = shared.lock() {
+                if d.dirty && !d.untouched {
+                    titles.push(d.title.clone());
+                }
+            }
+        }
         titles.sort();
         titles
     }
@@ -270,8 +384,21 @@ impl AppState {
             }
             let meta = snapshot_meta(&s.title, s.location.as_ref().map(|l| l.path.to_string_lossy().to_string()));
             let Ok(bytes) = snapshot_bytes(&s) else { continue };
-            if self.recovery.keep_for_restart(&id, &meta, &bytes).is_ok() {
+            if self.recovery.keep_for_restart(&id, "xlsx", &meta, &bytes).is_ok() {
                 s.dirty = false;
+                kept.push(id);
+            }
+        }
+        let author = self.author();
+        for (id, shared) in self.doc_list() {
+            let Ok(mut d) = shared.lock() else { continue };
+            if !d.dirty || d.untouched {
+                continue;
+            }
+            let meta = snapshot_meta(&d.title, d.location.as_ref().map(|l| l.path.to_string_lossy().to_string()));
+            let Ok(bytes) = d.docx_bytes(&author) else { continue };
+            if self.recovery.keep_for_restart(&id, "docx", &meta, &bytes).is_ok() {
+                d.dirty = false;
                 kept.push(id);
             }
         }
@@ -284,6 +411,11 @@ impl AppState {
             if let Ok(shared) = self.session(id) {
                 if let Ok(mut s) = shared.lock() {
                     s.dirty = true;
+                }
+            }
+            if let Ok(shared) = self.doc(id) {
+                if let Ok(mut d) = shared.lock() {
+                    d.dirty = true;
                 }
             }
             self.recovery.forget_restart(id);
@@ -322,8 +454,111 @@ impl AppState {
             let Ok(model) = s.export_model() else { continue };
             drop(s);
             if let Ok(bytes) = encode_xlsx(&model) {
-                let _ = self.recovery.write_live(&id, seq, &meta, &bytes);
+                let _ = self.recovery.write_live(&id, "xlsx", seq, &meta, &bytes);
             }
         }
+        let author = self.author();
+        for (id, shared) in self.doc_list() {
+            let Ok(d) = shared.try_lock() else { continue };
+            if !d.dirty || d.untouched {
+                if self.recovery.has_snapshot(&id) {
+                    self.recovery.discard_live(&id);
+                }
+                continue;
+            }
+            let seq = d.edit_seq;
+            if !self.recovery.is_due(&id, seq, interval) {
+                continue;
+            }
+            let meta = snapshot_meta(&d.title, d.location.as_ref().map(|l| l.path.to_string_lossy().to_string()));
+            let Ok(bytes) = d.docx_bytes(&author) else { continue };
+            drop(d);
+            let _ = self.recovery.write_live(&id, "docx", seq, &meta, &bytes);
+        }
+    }
+}
+
+// ----------------------------------------------------------------------
+// Documents (Docs)
+// ----------------------------------------------------------------------
+
+impl AppState {
+    pub fn next_doc_title(&self) -> String {
+        let n = self.doc_counter.fetch_add(1, Ordering::SeqCst) + 1;
+        format!("Document{n}")
+    }
+
+    pub fn insert_doc(&self, doc: DocSession) -> SharedDoc {
+        let id = doc.id.clone();
+        let shared = Arc::new(Mutex::new(doc));
+        self.docs.lock().unwrap().insert(id, shared.clone());
+        shared
+    }
+
+    pub fn doc(&self, id: &str) -> AppResult<SharedDoc> {
+        self.docs.lock().unwrap().get(id).cloned().ok_or(AppError::DocumentNotFound)
+    }
+
+    fn doc_list(&self) -> Vec<(String, SharedDoc)> {
+        self.docs.lock().unwrap().iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+    }
+
+    pub fn with_doc<T>(&self, id: &str, f: impl FnOnce(&mut DocSession) -> AppResult<T>) -> AppResult<T> {
+        let shared = self.doc(id)?;
+        let mut d = shared.lock().map_err(|_| AppError::Engine("The document is busy".into()))?;
+        f(&mut d)
+    }
+
+    pub fn read_doc<T>(&self, id: &str, f: impl FnOnce(&DocSession) -> AppResult<T>) -> AppResult<T> {
+        let shared = self.doc(id)?;
+        let d = shared.lock().map_err(|_| AppError::Engine("The document is busy".into()))?;
+        f(&d)
+    }
+
+    /// Closes a document. Unsaved changes ("Don't Save", or the app is
+    /// quitting) are kept for a few days, like workbooks.
+    pub fn remove_doc(&self, id: &str) {
+        let doc = self.docs.lock().unwrap().remove(id);
+        if let Some(shared) = doc {
+            if let Ok(d) = shared.lock() {
+                if d.dirty && !d.untouched && d.edit_seq > 0 {
+                    if let Ok(bytes) = d.docx_bytes(&self.author()) {
+                        let meta = snapshot_meta(&d.title, d.location.as_ref().map(|l| l.path.to_string_lossy().to_string()));
+                        self.recovery.keep_unsaved(id, "docx", &meta, &bytes);
+                    }
+                }
+            }
+        }
+        self.recovery.discard_live(id);
+        self.windows.lock().unwrap().retain(|_, bound| bound != id);
+    }
+
+    /// Finds an open document by file path.
+    pub fn find_doc_by_path(&self, path: &str) -> Option<String> {
+        for (id, shared) in self.doc_list() {
+            if let Ok(d) = shared.try_lock() {
+                let open_path = d
+                    .location
+                    .as_ref()
+                    .map(|l| l.path.to_string_lossy().to_string())
+                    .or_else(|| d.source_path.clone());
+                if open_path.map(|p| p.eq_ignore_ascii_case(path)).unwrap_or(false) {
+                    return Some(id);
+                }
+            }
+        }
+        None
+    }
+
+    /// Open documents bound to windows: (window label, document id).
+    pub fn doc_windows(&self) -> Vec<(String, String)> {
+        let docs = self.docs.lock().unwrap();
+        self.windows
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, id)| docs.contains_key(*id))
+            .map(|(l, id)| (l.clone(), id.clone()))
+            .collect()
     }
 }

@@ -1,5 +1,7 @@
+import { invoke } from "@tauri-apps/api/core";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { setAppName } from "./app/context";
 import "./styles/base.css";
 import "./styles/titlebar.css";
 import "./styles/backstage.css";
@@ -17,4 +19,19 @@ window.addEventListener("contextmenu", (e) => {
   }
 });
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(<App />);
+// One binary runs both apps: each window asks which one it shows
+async function start() {
+  const root = ReactDOM.createRoot(document.getElementById("root") as HTMLElement);
+  const kind = await invoke<string>("window_kind").catch(() => "sheets");
+  if (kind === "docs") {
+    setAppName("Docs");
+    document.title = "Docs";
+    document.documentElement.dataset.app = "docs";
+    const [{ default: DocsApp }] = await Promise.all([import("./docs/DocsApp"), import("./styles/docs.css")]);
+    root.render(<DocsApp />);
+  } else {
+    root.render(<App />);
+  }
+}
+
+start();
